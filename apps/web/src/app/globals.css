@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  background: #0a0a0b;
+  color: #e8e8ea;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'ss01', 'cv11', 'tnum';
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* Tabular numbers everywhere — decimals align, differences are readable */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Selection color matches brand */
+::selection {
+  background: rgba(247, 147, 26, 0.25);
+}

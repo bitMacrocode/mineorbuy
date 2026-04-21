@@ -1,0 +1,20 @@
+{
+  "name": "@mineorbuy/engine",
+  "version": "0.1.0",
+  "description": "Mine vs Buy calculator for Bitcoin treasury decisions. Compares hosted mining vs DCA for US businesses deploying pre-tax profit.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx test/verify.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["bitcoin", "mining", "treasury", "calculator", "dca", "btc"],
+  "author": "BitMacro",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.7.0"
+  }
+}
