@@ -2,10 +2,16 @@
   "name": "mineorbuy",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev": "npm run dev --workspace=@mineorbuy/web",
     "test": "npm run test --workspace=@mineorbuy/engine"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
   }
 }

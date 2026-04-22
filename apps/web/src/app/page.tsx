@@ -47,6 +47,9 @@ export default async function HomePage() {
 
       <footer className="border-t border-edge pt-4 text-xs text-fg-faint">
         <p className="leading-relaxed">
+          Built by the operator of BitMacro, an independent Bitcoin mining operation.
+        </p>
+        <p className="leading-relaxed">
           This tool makes a 4-year projection comparing hosted Bitcoin mining
           against DCA, on equal pre-tax dollars committed. It is not financial
           advice. Your actual tax situation, hosting contract terms, and ASIC
