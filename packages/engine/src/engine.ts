@@ -25,6 +25,51 @@ export const HALVING_SCHEDULE: ReadonlyArray<readonly [number, number]> = [
   [2032 + 4 / 12, 0.78125],
 ];
 
+// =============================================================================
+// HALVING PROJECTION FROM BLOCK HEIGHT
+// =============================================================================
+
+export const HALVING_HEIGHTS = [210_000, 420_000, 630_000, 840_000, 1_050_000, 1_260_000, 1_470_000, 1_680_000] as const;
+export const HALVING_SUBSIDIES = [25, 12.5, 6.25, 3.125, 1.5625, 0.78125, 0.390625, 0.1953125] as const;
+
+const HISTORICAL_HALVING_DATES: Record<number, number> = {
+  210_000: new Date('2012-11-28T15:24:38Z').getTime() / 1000,
+  420_000: new Date('2016-07-09T16:46:13Z').getTime() / 1000,
+  630_000: new Date('2020-05-11T19:23:43Z').getTime() / 1000,
+  840_000: new Date('2024-04-19T20:09:27Z').getTime() / 1000,
+};
+
+export interface HalvingEvent {
+  height: number;
+  subsidy: number;
+  projectedUnixSec: number;
+  isHistorical: boolean;
+}
+
+export function projectHalvings(
+  currentBlockHeight: number,
+  avgBlockTimeSec: number,
+  refTimeSec?: number,
+): HalvingEvent[] {
+  const nowSec = refTimeSec ?? Date.now() / 1000;
+  return HALVING_HEIGHTS.map((h, i) => {
+    if (h <= currentBlockHeight && HISTORICAL_HALVING_DATES[h]) {
+      return { height: h, subsidy: HALVING_SUBSIDIES[i], projectedUnixSec: HISTORICAL_HALVING_DATES[h], isHistorical: true };
+    }
+    const blocksAway = h - currentBlockHeight;
+    const secondsAway = blocksAway * avgBlockTimeSec;
+    return { height: h, subsidy: HALVING_SUBSIDIES[i], projectedUnixSec: nowSec + secondsAway, isHistorical: false };
+  });
+}
+
+/** Convert projected halvings to the [yearDecimal, subsidy] format used by blockSubsidyAt */
+export function halvingsToSchedule(halvings: HalvingEvent[]): Array<readonly [number, number]> {
+  return halvings.map(h => {
+    const yearDec = 1970 + h.projectedUnixSec / (365.25 * 86400);
+    return [yearDec, h.subsidy] as const;
+  });
+}
+
 export const DEFAULT_BTC_PRICE = 75_071.0;
 export const DEFAULT_NETWORK_EH = 870.0;
 export const DEFAULT_FEE_SHARE = 0.03;
@@ -134,6 +179,9 @@ export interface MacroAssumptions {
   fee_share_of_reward: number;
   pool_fee: number;
   risk_free_rate: number;
+  // Optional: when set, halving dates are projected from live block height
+  current_block_height?: number;
+  avg_block_time_sec?: number;
 }
 
 export interface BusinessInputs {
@@ -229,9 +277,12 @@ export function btcPriceAt(month: number, macro: MacroAssumptions): number {
   return A * Math.pow(daysNow, B);
 }
 
-export function blockSubsidyAt(yearDecimal: number): number {
+export function blockSubsidyAt(
+  yearDecimal: number,
+  schedule: ReadonlyArray<readonly [number, number]> = HALVING_SCHEDULE,
+): number {
   let subsidy = 50.0;
-  for (const [halvingYear, newSubsidy] of HALVING_SCHEDULE) {
+  for (const [halvingYear, newSubsidy] of schedule) {
     if (yearDecimal >= halvingYear) subsidy = newSubsidy;
   }
   return subsidy;
@@ -359,6 +410,15 @@ export function simulateMine(
   const H = HORIZON_YEARS * 12;
   const sizing = sizeFleet(biz, mine, macro);
 
+  // Use projected halvings when block height is available, else hardcoded schedule
+  const halvingSchedule = macro.current_block_height != null
+    ? halvingsToSchedule(projectHalvings(
+        macro.current_block_height,
+        macro.avg_block_time_sec ?? 600,
+        (macro.start_date - 1970) * 365.25 * 86400,
+      ))
+    : HALVING_SCHEDULE;
+
   const nUnits = sizing.n_units;
   const totalTh = nUnits * asic.th_per_unit;
   const totalWatts = nUnits * asic.watts_per_unit;
@@ -377,7 +437,7 @@ export function simulateMine(
 
   for (let m = 1; m <= H; m++) {
     const yearDec = macro.start_date + (m - 1) / 12.0;
-    const subsidy = blockSubsidyAt(yearDec);
+    const subsidy = blockSubsidyAt(yearDec, halvingSchedule);
     const netEh = networkHashrateAt(m, macro);
     const netTh = netEh * 1e6;
 

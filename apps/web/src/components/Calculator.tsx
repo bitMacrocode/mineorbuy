@@ -8,6 +8,8 @@ import {
   PRICE_PRESETS,
   DIFFICULTY_UI_PRESETS,
   type DifficultyUIKey,
+  projectHalvings,
+  HORIZON_YEARS,
   buildScenario,
   compare,
   type PriceModel,
@@ -24,6 +26,7 @@ import {
 } from './ui';
 import { fmtBtc, fmtUsd, fmtPct, fmtSigned, fmtUsdSigned, fmtLargeUsd } from '@/lib/format';
 import type { MarketData } from '@/lib/market';
+import { MoneyFlow } from './MoneyFlow';
 
 // Bracket presets — nobody knows their marginal rate off the top of their head
 const TAX_PRESETS: Record<string, { label: string; fed: number; state: number; eff: number; entity: string }> = {
@@ -108,6 +111,10 @@ export function Calculator({ market }: { market: MarketData }) {
     // Swap in live market data
     macro.btc_price_start = market.btcPrice;
     macro.network_hashrate_start_eh = market.networkHashrateEh;
+    if (market.blockHeight > 0) {
+      macro.current_block_height = market.blockHeight;
+      macro.avg_block_time_sec = market.avgBlockTimeSec;
+    }
     return compare(biz, mine, buy, macro);
   }, [
     pretax,
@@ -120,6 +127,7 @@ export function Calculator({ market }: { market: MarketData }) {
     difficultyKey,
     market.btcPrice,
     market.networkHashrateEh,
+    market.blockHeight,
   ]);
 
   const m = result.mine_detail;
@@ -135,6 +143,28 @@ export function Calculator({ market }: { market: MarketData }) {
     annualizedPct <= 18 ? 'baseline' :
     'hashrate_race';
   const suggestedLabel = DIFFICULTY_UI_PRESETS[suggestedPreset].label;
+
+  // Halving projection for display
+  const halvings = market.blockHeight > 0
+    ? projectHalvings(market.blockHeight, market.avgBlockTimeSec)
+    : null;
+  const nextHalving = halvings?.find(h => !h.isHistorical && h.projectedUnixSec > Date.now() / 1000);
+
+  const formatHalvingDate = (unixSec: number) => {
+    const d = new Date(unixSec * 1000);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const monthsAway = Math.round((unixSec - Date.now() / 1000) / (30.4375 * 86400));
+    return `est. ${months[d.getMonth()]} ${d.getFullYear()} (${monthsAway}mo)`;
+  };
+
+  const simStartYear = 2026 + 4 / 12;
+  const simEndYear = simStartYear + HORIZON_YEARS;
+  const formatYear = (y: number) => {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const yr = Math.floor(y);
+    const mo = Math.round((y - yr) * 12);
+    return `${months[mo] ?? 'Jan'} ${yr}`;
+  };
 
   return (
     <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
@@ -395,6 +425,9 @@ export function Calculator({ market }: { market: MarketData }) {
           </div>
         </Panel>
 
+        {/* Money Flow */}
+        <MoneyFlow result={result} />
+
         {/* Assumptions reference */}
         <div className="grid gap-4 sm:grid-cols-2">
           <Panel title="Active Assumptions">
@@ -434,6 +467,18 @@ export function Calculator({ market }: { market: MarketData }) {
                     ? 'fallback (defaults)'
                     : `${market.sources.btc} · ${market.sources.hashrate}`
                 }
+                muted
+              />
+              {nextHalving && (
+                <SingleRow
+                  label="Next halving"
+                  value={`Block ${nextHalving.height.toLocaleString()} · ${formatHalvingDate(nextHalving.projectedUnixSec)}`}
+                  muted
+                />
+              )}
+              <SingleRow
+                label="Simulation window"
+                value={`${formatYear(simStartYear)} → ${formatYear(simEndYear)}`}
                 muted
               />
             </div>

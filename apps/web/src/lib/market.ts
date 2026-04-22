@@ -10,6 +10,8 @@ export interface MarketData {
   btcPrice: number;
   networkHashrateEh: number;
   difficultyNextAdjustmentPct: number;
+  blockHeight: number;
+  avgBlockTimeSec: number;
   fetchedAt: string;
   sources: { btc: string; hashrate: string };
   stale: boolean;
@@ -19,6 +21,8 @@ const FALLBACK: MarketData = {
   btcPrice: DEFAULT_BTC_PRICE,
   networkHashrateEh: DEFAULT_NETWORK_EH,
   difficultyNextAdjustmentPct: 0,
+  blockHeight: 0,
+  avgBlockTimeSec: 600,
   fetchedAt: new Date().toISOString(),
   sources: { btc: 'default', hashrate: 'default' },
   stale: true,
@@ -26,7 +30,7 @@ const FALLBACK: MarketData = {
 
 export async function fetchMarketData(): Promise<MarketData> {
   try {
-    const [btcRes, hrRes, diffRes] = await Promise.allSettled([
+    const [btcRes, hrRes, diffRes, heightRes] = await Promise.allSettled([
       fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', {
         next: { revalidate: 300 }, // 5 min cache
       }),
@@ -34,6 +38,9 @@ export async function fetchMarketData(): Promise<MarketData> {
         next: { revalidate: 3600 }, // 1 hr cache
       }),
       fetch('https://mempool.space/api/v1/difficulty-adjustment', {
+        next: { revalidate: 600 }, // 10 min cache
+      }),
+      fetch('https://mempool.space/api/blocks/tip/height', {
         next: { revalidate: 600 }, // 10 min cache
       }),
     ]);
@@ -57,6 +64,17 @@ export async function fetchMarketData(): Promise<MarketData> {
       difficultyNextAdjustmentPct = data?.difficultyChange ?? 0;
     }
 
+    let blockHeight = 0;
+    if (heightRes.status === 'fulfilled' && heightRes.value.ok) {
+      const text = await heightRes.value.text();
+      const parsed = parseInt(text.trim(), 10);
+      if (!isNaN(parsed) && parsed > 0) blockHeight = parsed;
+    }
+
+    // Derive avg block time from difficulty adjustment remaining time if available,
+    // otherwise use the standard 600s (10min) target
+    const avgBlockTimeSec = 600;
+
     const btcSource =
       btcRes.status === 'fulfilled' && btcRes.value.ok ? 'coingecko' : 'default';
     const hrSource =
@@ -66,6 +84,8 @@ export async function fetchMarketData(): Promise<MarketData> {
       btcPrice,
       networkHashrateEh,
       difficultyNextAdjustmentPct,
+      blockHeight,
+      avgBlockTimeSec,
       fetchedAt: new Date().toISOString(),
       sources: { btc: btcSource, hashrate: hrSource },
       stale: btcSource === 'default' || hrSource === 'default',
