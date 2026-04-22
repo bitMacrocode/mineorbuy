@@ -69,7 +69,9 @@ export default function MethodologyPage() {
           <p className="text-fg-muted">
             Hosting bills are paid from ongoing business cash (default mode).
             Network hashrate grows per the difficulty growth preset (moderate
-            default: 15% year one, decaying to 8% terminal). The 2028 halving
+            default: 15% year one, decaying to 8% terminal). The next retarget
+            prediction from mempool.space is displayed as a directional signal;
+            your selected difficulty preset drives the actual simulation math. The 2028 halving
             inside the horizon cuts block subsidy from 3.125 to 1.5625 BTC at
             month 24.
           </p>

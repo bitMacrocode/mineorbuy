@@ -137,10 +137,9 @@ export function Calculator({ market }: { market: MarketData }) {
   const mineWins = deltaBtc > 0;
 
   const retargetPct = market.difficultyNextAdjustmentPct;
-  const annualizedPct = (Math.pow(1 + retargetPct / 100, 26) - 1) * 100;
   const suggestedPreset: DifficultyUIKey =
-    annualizedPct <= 8 ? 'cycle_trough' :
-    annualizedPct <= 18 ? 'baseline' :
+    retargetPct <= 0 ? 'cycle_trough' :
+    retargetPct <= 3 ? 'baseline' :
     'hashrate_race';
   const suggestedLabel = DIFFICULTY_UI_PRESETS[suggestedPreset].label;
 
@@ -302,11 +301,11 @@ export function Calculator({ market }: { market: MarketData }) {
             </div>
             {retargetPct !== 0 && (
               <div className="text-2xs text-fg-faint leading-relaxed">
-                <span className="text-fg-muted">Recent signal:</span>{' '}
+                <span className="text-fg-muted">Next retarget:</span>{' '}
                 <span className="tabular">
-                  {annualizedPct >= 0 ? '+' : ''}{annualizedPct.toFixed(1)}% / yr annualized
+                  {retargetPct > 0 ? '+' : ''}{retargetPct.toFixed(2)}%
                 </span>
-                {' '}from next retarget prediction — aligns with{' '}
+                {' '}— aligns with{' '}
                 <button
                   type="button"
                   onClick={() => setDifficultyKey(suggestedPreset)}
@@ -453,15 +452,6 @@ export function Calculator({ market }: { market: MarketData }) {
                     ? `${retargetPct > 0 ? '+' : ''}${retargetPct.toFixed(2)}%`
                     : '—'
                 }
-              />
-              <SingleRow
-                label="Annualized (26 retargets)"
-                value={
-                  retargetPct !== 0
-                    ? `${annualizedPct >= 0 ? '+' : ''}${annualizedPct.toFixed(1)}%`
-                    : '—'
-                }
-                muted
               />
               <SingleRow label="Price model" value={result.inputs.btc_price_model_label} />
               <SingleRow
