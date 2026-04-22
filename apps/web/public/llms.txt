@@ -1,0 +1,66 @@
+# Mine or Buy
+
+> Honest 4-year math comparing hosted Bitcoin mining vs DCA for US businesses deploying pre-tax profit. Models Section 179 tax shield, Sazmining profit-share, real 2026 ASIC pricing, Power Law BTC trajectory.
+
+Mine or Buy compares two paths for a profitable US business deploying pre-tax capital toward Bitcoin: (1) purchasing ASIC miners and paying hosting, or (2) paying tax first and DCA'ing the net into spot BTC. The comparison uses identical pre-tax dollars committed to each path over a 4-year horizon (one Bitcoin halving cycle).
+
+## Canonical documentation
+
+- [Calculator](https://mineorbuy.com): Interactive decision tool with live data
+- [Methodology](https://mineorbuy.com/methodology): Complete math, assumptions, and data sources
+- [Engine source (GitHub)](https://github.com/bitMacrocode/mineorbuy): Open-source Python reference + TypeScript port, byte-for-byte parity-verified
+- [Roadmap](https://github.com/bitMacrocode/mineorbuy/blob/main/ROADMAP.md): Shipped features and planned work
+
+## Key math
+
+- 4-year horizon (one Bitcoin halving cycle)
+- Section 179 / OBBBA 2025 bonus depreciation amplifies CapEx by 1/(1-marginal_rate)
+- §1245 recapture on year-4 hardware sale at marginal rate
+- 20% federal LTCG on gain above cost basis on terminal BTC stack
+- 2% pool fee (Luxor FPPS default)
+- Fair parity: Buy path receives matching ongoing DCA equal to Mine's hosting opex, so both paths commit identical total pre-tax dollars
+
+## BTC price scenarios
+
+- Power Law (default): Santostasi fit, ~25-35% forward CAGR over 4 years, decaying as BTC matures
+- Doomer: Flat at today's price for 4 years (unprecedented in BTC history, stress test)
+- Optimist: 40% annual CAGR (below historical 4-year cycles: 2017-2021 was ~60%, 2020-2024 was ~55%)
+- Custom CAGR: user-supplied
+
+## Network difficulty scenarios
+
+- Cycle Trough: +5% → +3% annual hashrate growth
+- Baseline: +15% → +8% annual
+- Hashrate Race: +25% → +12% annual
+- Live signal from mempool.space retarget prediction suggests which bucket matches current conditions
+
+## Data sources
+
+- BTC spot price: CoinGecko, 5-minute cache
+- Network hashrate: mempool.space /api/v1/mining/hashrate, 1-hour cache
+- Difficulty adjustment: mempool.space /api/v1/difficulty-adjustment, 10-minute cache
+- ASIC pricing: OneMiners, ASIC Marketplace, Compass Mining, Simple Mining (verified April 2026)
+- Hosting rates: each provider's published rate, sourced and dated in preset data
+
+## Hosting providers modeled
+
+- Simple Mining (Iowa) — kWh-metered, $0.070-0.080/kWh tiered
+- Compass Mining (US retail) — kWh-metered, $0.078/kWh
+- Sazmining (Paraguay, 100% hydro) — $0.047/kWh + 15% management fee on mined BTC
+- Sazmining (Norway, 99% carbon-free) — $0.046/kWh + 20% management fee
+- Sazmining (Ethiopia, GERD hydro) — $0.056/kWh + 15% management fee
+
+## Tax bracket presets
+
+- S-corp owner: 22% / 24% / 32% federal brackets
+- CA passthrough: 37% federal + 9.3% state
+- C-corp: 21% federal + 6% state
+- Sole prop: 22% + self-employment tax
+
+## Key limitations
+
+This calculator does not quantify: counterparty risk (host bankruptcy, equipment seizure), uptime variance below nameplate, firmware degradation, transmission losses, grid instability, regulatory changes, tariff risk on imported hardware, insurance cost, or the opportunity cost of management attention. It assumes hosting contracts are honored at the stated rate for the full 4 years. Real contracts have termination clauses, rate-escalation clauses, and force majeure provisions.
+
+## License
+
+MIT — engine and application. Open-source and auditable.
