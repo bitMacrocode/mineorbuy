@@ -393,6 +393,11 @@ export function Calculator({ market }: { market: MarketData }) {
             <div className="py-2">
               <StatRow label="BTC stack" mine={fmtBtc(m.btc_stack)} buy={fmtBtc(b.btc_stack)} emphasis />
               <StatRow
+                label="Cost per coin"
+                mine={m.btc_stack > 0 ? fmtUsd(m.cost_basis / m.btc_stack) : '—'}
+                buy={b.btc_stack > 0 ? fmtUsd(b.cost_basis / b.btc_stack) : '—'}
+              />
+              <StatRow
                 label="Terminal USD (pre-tax)"
                 mine={fmtUsd(m.pretax_terminal_value)}
                 buy={fmtUsd(b.pretax_terminal_value)}
@@ -433,6 +438,10 @@ export function Calculator({ market }: { market: MarketData }) {
           <Panel title="Active Assumptions">
             <div className="space-y-0.5">
               <SingleRow label="BTC price today" value={fmtUsd(market.btcPrice)} />
+              <SingleRow
+                label="Modeled BTC price (Yr 4)"
+                value={fmtUsd(m.terminal_btc_price)}
+              />
               <SingleRow
                 label="Network hashrate"
                 value={`${market.networkHashrateEh.toFixed(0)} EH/s`}

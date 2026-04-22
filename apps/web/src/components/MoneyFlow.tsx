@@ -5,307 +5,217 @@ import type { CompareResult } from '@mineorbuy/engine';
 import { fmtLargeUsd } from '@/lib/format';
 import { Panel } from './ui';
 
-// ─── Flow data derivation ───────────────────────────────────────────────────
+// ─── Data types ─────────────────────────────────────────────────────────────
 
-interface FlowLink {
-  id: string;
-  from: string;
-  to: string;
-  value: number;
-  color: string;
+type FlowColor = '#7dd3fc' | '#f59e0b' | '#4ade80' | '#94a3b8';
+
+interface FlowItem {
   label: string;
-  derivation: string;
+  amount: number;
+  color: FlowColor;
 }
 
-interface FlowNode {
-  id: string;
-  label: string;
-  value: number;
-  column: number;
-  color: string;
-}
+// ─── Derive inputs/outputs for each path ────────────────────────────────────
 
-function deriveMineFlows(r: CompareResult): { nodes: FlowNode[]; links: FlowLink[] } {
+function mineData(r: CompareResult): { inputs: FlowItem[]; outputs: FlowItem[] } {
   const m = r.mine_detail;
-  const totalIn = r.inputs.pretax_capital + r.inputs.annual_ongoing * 4;
   const ongoing4yr = r.inputs.annual_ongoing * 4;
 
-  const nodes: FlowNode[] = [
-    { id: 'm-in', label: 'Pre-tax committed', value: totalIn, column: 0, color: '#94a3b8' },
-    { id: 'm-hw', label: 'Hardware CapEx', value: m.capex_gross_user, column: 1, color: '#7dd3fc' },
-    { id: 'm-shield', label: 'Tax Shield', value: m.tax_shield, column: 1, color: '#22d3ee' },
-    { id: 'm-host', label: 'Hosting (4yr)', value: m.cumulative_opex_usd, column: 1, color: '#7dd3fc' },
-    { id: 'm-btc', label: 'BTC Stack', value: m.terminal_stack_usd, column: 2, color: '#7dd3fc' },
-    { id: 'm-resale', label: 'HW Resale', value: m.hardware_resale, column: 2, color: '#7dd3fc' },
-    { id: 'm-tax', label: 'Exit Taxes', value: m.recapture_tax + m.ltcg_paid, column: 2, color: '#f59e0b' },
-    { id: 'm-out', label: 'Walk-away', value: m.posttax_terminal_value, column: 3, color: '#94a3b8' },
+  const inputs: FlowItem[] = [
+    { label: 'ASIC purchase (Yr 1)', amount: m.capex_gross_user, color: '#7dd3fc' },
+    ...(ongoing4yr > 0 ? [{ label: 'Hosting opex (Yr 1–4)', amount: m.cumulative_opex_usd, color: '#7dd3fc' as FlowColor }] : []),
+    { label: 'Sec 179 tax refund', amount: m.tax_shield, color: '#4ade80' },
   ];
 
-  const links: FlowLink[] = [
-    {
-      id: 'ml-hw', from: 'm-in', to: 'm-hw', value: m.capex_gross_user,
-      color: '#7dd3fc', label: 'Hardware purchase',
-      derivation: `Pre-tax capital ${fmtLargeUsd(r.inputs.pretax_capital)} allocated to ASIC purchase`,
-    },
-    ...(ongoing4yr > 0 ? [{
-      id: 'ml-host', from: 'm-in', to: 'm-host', value: ongoing4yr,
-      color: '#7dd3fc', label: 'Hosting opex (ongoing)',
-      derivation: `${fmtLargeUsd(r.inputs.annual_ongoing)}/yr × 4yr = ${fmtLargeUsd(ongoing4yr)} total hosting`,
-    }] : []),
-    {
-      id: 'ml-shield', from: 'm-shield', to: 'm-hw', value: m.tax_shield,
-      color: '#22d3ee', label: 'Sec 179 tax shield (refund)',
-      derivation: `CapEx ${fmtLargeUsd(m.capex_total)} × marginal rate = ${fmtLargeUsd(m.tax_shield)} refunded`,
-    },
-    {
-      id: 'ml-btc', from: 'm-hw', to: 'm-btc', value: m.terminal_stack_usd,
-      color: '#7dd3fc', label: 'Mining → BTC appreciation',
-      derivation: `${m.btc_stack.toFixed(4)} BTC mined × terminal price = ${fmtLargeUsd(m.terminal_stack_usd)}`,
-    },
-    {
-      id: 'ml-resale', from: 'm-hw', to: 'm-resale', value: m.hardware_resale,
-      color: '#7dd3fc', label: 'Hardware resale (yr 4)',
-      derivation: `CapEx ${fmtLargeUsd(m.capex_total)} × 15% resale = ${fmtLargeUsd(m.hardware_resale)}`,
-    },
-    {
-      id: 'ml-recap', from: 'm-resale', to: 'm-tax', value: m.recapture_tax,
-      color: '#f59e0b', label: '§1245 recapture',
-      derivation: `Resale ${fmtLargeUsd(m.hardware_resale)} × marginal rate = ${fmtLargeUsd(m.recapture_tax)}`,
-    },
-    ...(m.ltcg_paid > 0 ? [{
-      id: 'ml-ltcg', from: 'm-btc', to: 'm-tax', value: m.ltcg_paid,
-      color: '#f59e0b', label: 'LTCG on BTC gain',
-      derivation: `Gain above cost basis × 20% = ${fmtLargeUsd(m.ltcg_paid)}`,
-    }] : []),
-    {
-      id: 'ml-out', from: 'm-btc', to: 'm-out', value: m.posttax_terminal_value,
-      color: '#7dd3fc', label: 'After-tax terminal',
-      derivation: `BTC + resale − taxes = ${fmtLargeUsd(m.posttax_terminal_value)}`,
-    },
+  const outputs: FlowItem[] = [
+    { label: 'BTC mined (terminal)', amount: m.terminal_stack_usd, color: '#7dd3fc' },
+    { label: 'Hardware resale (Yr 4)', amount: m.hardware_resale, color: '#7dd3fc' },
+    ...(m.ltcg_paid > 0 ? [{ label: 'LTCG tax', amount: m.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
+    ...(m.recapture_tax > 0 ? [{ label: '§1245 recapture', amount: m.recapture_tax, color: '#f59e0b' as FlowColor }] : []),
   ];
 
-  return { nodes, links };
+  return { inputs, outputs };
 }
 
-function deriveBuyFlows(r: CompareResult): { nodes: FlowNode[]; links: FlowLink[] } {
+function buyData(r: CompareResult): { inputs: FlowItem[]; outputs: FlowItem[] } {
   const b = r.buy_detail;
-  const totalIn = r.inputs.pretax_capital + r.inputs.annual_ongoing * 4;
   const ongoing4yr = r.inputs.annual_ongoing * 4;
   const ongoingTax = ongoing4yr * r.inputs.effective_rate;
-  const ongoingBtc = ongoing4yr - ongoingTax;
 
-  const nodes: FlowNode[] = [
-    { id: 'b-in', label: 'Pre-tax committed', value: totalIn, column: 0, color: '#94a3b8' },
-    { id: 'b-tax1', label: 'Income Tax', value: b.tax_paid_year1 + ongoingTax, column: 1, color: '#f59e0b' },
-    { id: 'b-btc', label: 'BTC Purchased', value: b.posttax_capital + ongoingBtc, column: 1, color: '#7dd3fc' },
-    { id: 'b-term', label: 'Terminal BTC', value: b.terminal_stack_usd, column: 2, color: '#7dd3fc' },
-    { id: 'b-ltcg', label: 'LTCG Tax', value: b.ltcg_paid, column: 2, color: '#f59e0b' },
-    { id: 'b-out', label: 'Walk-away', value: b.posttax_terminal_value, column: 3, color: '#94a3b8' },
-  ];
-
-  const links: FlowLink[] = [
-    {
-      id: 'bl-tax1', from: 'b-in', to: 'b-tax1', value: b.tax_paid_year1,
-      color: '#f59e0b', label: 'Income tax (lump)',
-      derivation: `${fmtLargeUsd(r.inputs.pretax_capital)} × ${(r.inputs.effective_rate * 100).toFixed(0)}% effective = ${fmtLargeUsd(b.tax_paid_year1)}`,
-    },
-    {
-      id: 'bl-btc1', from: 'b-in', to: 'b-btc', value: b.posttax_capital,
-      color: '#7dd3fc', label: 'Lump BTC purchase',
-      derivation: `${fmtLargeUsd(r.inputs.pretax_capital)} − tax = ${fmtLargeUsd(b.posttax_capital)} DCA'd over 12mo`,
-    },
+  const inputs: FlowItem[] = [
+    { label: 'Income tax (Yr 1)', amount: b.tax_paid_year1, color: '#f59e0b' },
+    { label: 'BTC lump DCA (Yr 1)', amount: b.posttax_capital, color: '#7dd3fc' },
     ...(ongoing4yr > 0 ? [
-      {
-        id: 'bl-tax2', from: 'b-in', to: 'b-tax1', value: ongoingTax,
-        color: '#f59e0b', label: 'Income tax (ongoing DCA)',
-        derivation: `${fmtLargeUsd(ongoing4yr)} ongoing × ${(r.inputs.effective_rate * 100).toFixed(0)}% = ${fmtLargeUsd(ongoingTax)}`,
-      },
-      {
-        id: 'bl-btc2', from: 'b-in', to: 'b-btc', value: ongoingBtc,
-        color: '#7dd3fc', label: 'Ongoing DCA (after tax)',
-        derivation: `${fmtLargeUsd(ongoing4yr)} − tax = ${fmtLargeUsd(ongoingBtc)} to BTC across 48mo`,
-      },
+      { label: 'Tax on ongoing (Yr 1–4)', amount: ongoingTax, color: '#f59e0b' as FlowColor },
+      { label: 'Ongoing DCA (Yr 1–4)', amount: ongoing4yr - ongoingTax, color: '#7dd3fc' as FlowColor },
     ] : []),
-    {
-      id: 'bl-term', from: 'b-btc', to: 'b-term', value: b.terminal_stack_usd,
-      color: '#7dd3fc', label: 'BTC appreciation',
-      derivation: `${b.btc_stack.toFixed(4)} BTC × terminal price = ${fmtLargeUsd(b.terminal_stack_usd)}`,
-    },
-    ...(b.ltcg_paid > 0 ? [{
-      id: 'bl-ltcg', from: 'b-term', to: 'b-ltcg', value: b.ltcg_paid,
-      color: '#f59e0b', label: 'LTCG on BTC gain',
-      derivation: `Gain above cost basis × 20% = ${fmtLargeUsd(b.ltcg_paid)}`,
-    }] : []),
-    {
-      id: 'bl-out', from: 'b-term', to: 'b-out', value: b.posttax_terminal_value,
-      color: '#7dd3fc', label: 'After-tax terminal',
-      derivation: `Terminal − LTCG = ${fmtLargeUsd(b.posttax_terminal_value)}`,
-    },
   ];
 
-  return { nodes, links };
+  const outputs: FlowItem[] = [
+    { label: 'BTC stack (terminal)', amount: b.terminal_stack_usd, color: '#7dd3fc' },
+    ...(b.ltcg_paid > 0 ? [{ label: 'LTCG tax', amount: b.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
+  ];
+
+  return { inputs, outputs };
 }
 
-// ─── SVG Sankey renderer ────────────────────────────────────────────────────
+// ─── Sankey SVG renderer (mempool.space transaction style) ──────────────────
 
-const COL_X = [30, 220, 430, 620];
-const NODE_W = 120;
-const VIEW_W = 770;
-const VIEW_H = 320;
+const VW = 700;
+const VH = 340;
+const BLOCK_W = 14;
+const LEFT_X = 160;       // right edge of left labels area
+const RIGHT_X = VW - 160; // left edge of right labels area
+const GAP = 6;
+const PAD_Y = 10;
+const MIN_BLOCK_H = 28;   // enough for two lines of text
 
-function layoutNodes(nodes: FlowNode[]): Map<string, { x: number; y: number; h: number }> {
-  const layout = new Map<string, { x: number; y: number; h: number }>();
-  const maxVal = Math.max(...nodes.map(n => n.value), 1);
-  const colGroups = new Map<number, FlowNode[]>();
-  for (const n of nodes) {
-    const arr = colGroups.get(n.column) ?? [];
-    arr.push(n);
-    colGroups.set(n.column, arr);
+interface BlockPos { y: number; h: number }
+
+function stackBlocks(items: FlowItem[]): BlockPos[] {
+  const total = items.reduce((s, i) => s + i.amount, 0);
+  const totalGaps = (items.length - 1) * GAP;
+  const availH = VH - 2 * PAD_Y - totalGaps;
+
+  // First pass: proportional heights clamped to minimum
+  let heights = items.map(item => Math.max(MIN_BLOCK_H, (item.amount / total) * availH));
+
+  // If clamping expanded total, scale the large items down to fit
+  const sumH = heights.reduce((s, h) => s + h, 0);
+  if (sumH > availH) {
+    const excess = sumH - availH;
+    const shrinkable = heights.filter(h => h > MIN_BLOCK_H);
+    const shrinkTotal = shrinkable.reduce((s, h) => s + h, 0);
+    heights = heights.map(h => h > MIN_BLOCK_H ? h - excess * (h / shrinkTotal) : h);
   }
 
-  for (const [col, group] of colGroups) {
-    const x = COL_X[col] ?? 0;
-    let y = 20;
-    for (const n of group) {
-      const h = Math.max(20, (n.value / maxVal) * 180);
-      layout.set(n.id, { x, y, h });
-      y += h + 12;
-    }
+  const positions: BlockPos[] = [];
+  let y = PAD_Y;
+  for (const h of heights) {
+    positions.push({ y, h });
+    y += h + GAP;
   }
-
-  return layout;
+  return positions;
 }
 
-function SankeyPath({
-  link,
-  fromRect,
-  toRect,
-  maxVal,
-  onHover,
-}: {
-  link: FlowLink;
-  fromRect: { x: number; y: number; h: number };
-  toRect: { x: number; y: number; h: number };
-  maxVal: number;
-  onHover: (link: FlowLink | null, e?: React.MouseEvent) => void;
-}) {
-  const sw = Math.max(2, (link.value / maxVal) * 60);
-  const x1 = fromRect.x + NODE_W;
-  const y1 = fromRect.y + fromRect.h / 2;
-  const x2 = toRect.x;
-  const y2 = toRect.y + toRect.h / 2;
-  const cx = (x1 + x2) / 2;
-
-  return (
-    <path
-      d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-      fill="none"
-      stroke={link.color}
-      strokeWidth={sw}
-      strokeOpacity={0.35}
-      className="transition-all hover:!stroke-opacity-70 cursor-pointer"
-      onMouseEnter={(e) => onHover(link, e)}
-      onMouseLeave={() => onHover(null)}
-    />
-  );
-}
-
-function SankeyDiagram({
-  nodes,
-  links,
+function FlowDiagram({
+  inputs,
+  outputs,
   title,
 }: {
-  nodes: FlowNode[];
-  links: FlowLink[];
+  inputs: FlowItem[];
+  outputs: FlowItem[];
   title: string;
 }) {
-  const [hovered, setHovered] = useState<{ link: FlowLink; x: number; y: number } | null>(null);
-  const layout = layoutNodes(nodes);
-  const maxVal = Math.max(...nodes.map(n => n.value), 1);
+  const [hovIdx, setHovIdx] = useState<string | null>(null);
+  const inPos = stackBlocks(inputs);
+  const outPos = stackBlocks(outputs);
 
-  const handleHover = (link: FlowLink | null, e?: React.MouseEvent) => {
-    if (link && e) {
-      const rect = (e.target as SVGElement).closest('svg')?.getBoundingClientRect();
-      setHovered({ link, x: e.clientX - (rect?.left ?? 0), y: e.clientY - (rect?.top ?? 0) });
-    } else {
-      setHovered(null);
+  const totalIn = inputs.reduce((s, i) => s + i.amount, 0);
+  const totalOut = outputs.reduce((s, i) => s + i.amount, 0);
+
+  // Build ribbon flows: each (input, output) pair gets a proportional ribbon
+  const ribbons: Array<{
+    key: string;
+    y1: number; h1: number;
+    y2: number; h2: number;
+    color: FlowColor;
+  }> = [];
+
+  // Track cumulative offsets within each block
+  const inOffsets = inputs.map(() => 0);
+  const outOffsets = outputs.map(() => 0);
+
+  for (let i = 0; i < inputs.length; i++) {
+    for (let j = 0; j < outputs.length; j++) {
+      // How much of input i flows to output j
+      const h1 = inPos[i].h * (outputs[j].amount / totalOut);
+      const h2 = outPos[j].h * (inputs[i].amount / totalIn);
+
+      ribbons.push({
+        key: `${i}-${j}`,
+        y1: inPos[i].y + inOffsets[i],
+        h1,
+        y2: outPos[j].y + outOffsets[j],
+        h2,
+        color: outputs[j].color,
+      });
+
+      inOffsets[i] += h1;
+      outOffsets[j] += h2;
     }
-  };
+  }
+
+  const x1 = LEFT_X;
+  const x2 = RIGHT_X;
+  const cx1 = x1 + (x2 - x1) * 0.4;
+  const cx2 = x1 + (x2 - x1) * 0.6;
 
   return (
-    <div className="relative">
-      <div className="mb-1 text-xs font-medium uppercase tracking-wider text-fg-muted">{title}</div>
-      <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
-        {/* Links */}
-        {links.map(link => {
-          const from = layout.get(link.from);
-          const to = layout.get(link.to);
-          if (!from || !to) return null;
+    <div>
+      <div className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-muted">{title}</div>
+      <svg
+        viewBox={`0 0 ${VW} ${VH}`}
+        className="w-full"
+        preserveAspectRatio="xMidYMid meet"
+        onMouseLeave={() => setHovIdx(null)}
+      >
+        {/* Ribbons */}
+        {ribbons.map(r => {
+          const dimmed = hovIdx !== null && hovIdx !== r.key;
           return (
-            <SankeyPath
-              key={link.id}
-              link={link}
-              fromRect={from}
-              toRect={to}
-              maxVal={maxVal}
-              onHover={handleHover}
+            <path
+              key={r.key}
+              d={[
+                `M${x1 + BLOCK_W},${r.y1}`,
+                `C${cx1},${r.y1} ${cx2},${r.y2} ${x2},${r.y2}`,
+                `L${x2},${r.y2 + r.h2}`,
+                `C${cx2},${r.y2 + r.h2} ${cx1},${r.y1 + r.h1} ${x1 + BLOCK_W},${r.y1 + r.h1}`,
+                'Z',
+              ].join(' ')}
+              fill={r.color}
+              fillOpacity={dimmed ? 0.06 : 0.18}
+              stroke={r.color}
+              strokeWidth={0.5}
+              strokeOpacity={dimmed ? 0.05 : 0.25}
+              className="cursor-pointer transition-opacity"
+              onMouseEnter={() => setHovIdx(r.key)}
             />
           );
         })}
-        {/* Nodes */}
-        {nodes.map(n => {
-          const pos = layout.get(n.id);
-          if (!pos) return null;
+
+        {/* Left blocks + labels */}
+        {inputs.map((item, i) => {
+          const p = inPos[i];
           return (
-            <g key={n.id}>
-              <rect
-                x={pos.x}
-                y={pos.y}
-                width={NODE_W}
-                height={pos.h}
-                rx={3}
-                fill={n.color}
-                fillOpacity={0.15}
-                stroke={n.color}
-                strokeWidth={1}
-                strokeOpacity={0.4}
-              />
-              <text
-                x={pos.x + NODE_W / 2}
-                y={pos.y + pos.h / 2 - 5}
-                textAnchor="middle"
-                className="fill-fg-muted"
-                fontSize={9}
-                fontFamily="monospace"
-              >
-                {n.label}
+            <g key={`in-${i}`}>
+              <rect x={x1} y={p.y} width={BLOCK_W} height={p.h} rx={2} fill={item.color} fillOpacity={0.7} />
+              <text x={x1 - 6} y={p.y + p.h / 2 - 6} textAnchor="end" fontSize={9} fontFamily="monospace" className="fill-fg-muted">
+                {item.label}
               </text>
-              <text
-                x={pos.x + NODE_W / 2}
-                y={pos.y + pos.h / 2 + 8}
-                textAnchor="middle"
-                className="fill-fg"
-                fontSize={10}
-                fontWeight={600}
-                fontFamily="monospace"
-              >
-                {fmtLargeUsd(n.value)}
+              <text x={x1 - 6} y={p.y + p.h / 2 + 7} textAnchor="end" fontSize={10} fontWeight={600} fontFamily="monospace" className="fill-fg">
+                {fmtLargeUsd(item.amount)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Right blocks + labels */}
+        {outputs.map((item, j) => {
+          const p = outPos[j];
+          return (
+            <g key={`out-${j}`}>
+              <rect x={x2} y={p.y} width={BLOCK_W} height={p.h} rx={2} fill={item.color} fillOpacity={0.7} />
+              <text x={x2 + BLOCK_W + 6} y={p.y + p.h / 2 - 6} textAnchor="start" fontSize={9} fontFamily="monospace" className="fill-fg-muted">
+                {item.label}
+              </text>
+              <text x={x2 + BLOCK_W + 6} y={p.y + p.h / 2 + 7} textAnchor="start" fontSize={10} fontWeight={600} fontFamily="monospace" className="fill-fg">
+                {item.color === '#f59e0b' ? '−' : ''}{fmtLargeUsd(item.amount)}
               </text>
             </g>
           );
         })}
       </svg>
-      {/* Tooltip */}
-      {hovered && (
-        <div
-          className="pointer-events-none absolute z-10 rounded border border-edge bg-bg-panel px-3 py-2 text-xs shadow-lg"
-          style={{ left: Math.min(hovered.x + 12, VIEW_W - 200), top: hovered.y - 60 }}
-        >
-          <div className="font-medium text-fg">{hovered.link.label}</div>
-          <div className="mt-0.5 tabular text-fg-muted">{fmtLargeUsd(hovered.link.value)}</div>
-          <div className="mt-1 text-fg-faint">{hovered.link.derivation}</div>
-        </div>
-      )}
     </div>
   );
 }
@@ -313,17 +223,17 @@ function SankeyDiagram({
 // ─── Exported component ─────────────────────────────────────────────────────
 
 export function MoneyFlow({ result }: { result: CompareResult }) {
-  const mine = deriveMineFlows(result);
-  const buy = deriveBuyFlows(result);
+  const mine = mineData(result);
+  const buy = buyData(result);
 
   return (
-    <Panel title="Money Flow — Where Every Dollar Goes" subtitle="Hover for exact derivation">
-      <div className="grid gap-6 md:grid-cols-2">
-        <SankeyDiagram nodes={mine.nodes} links={mine.links} title="Mine + Ops" />
-        <SankeyDiagram nodes={buy.nodes} links={buy.links} title="Lump + DCA" />
+    <Panel title="Money Flow" subtitle="Where every dollar goes across the 4-year horizon">
+      <div className="grid gap-8 lg:grid-cols-2">
+        <FlowDiagram inputs={mine.inputs} outputs={mine.outputs} title="Mine + Ops" />
+        <FlowDiagram inputs={buy.inputs} outputs={buy.outputs} title="Lump + DCA" />
       </div>
-      <p className="mt-3 text-2xs text-fg-faint leading-relaxed">
-        Tracked in nominal dollars. Tax shield is shown as a credit flowing back; it is not double-counted as reinvestment.
+      <p className="mt-4 text-2xs text-fg-faint leading-relaxed">
+        Blue = productive capital / returns. Amber = tax outflows. Green = tax refund (Sec 179). Hover ribbons to isolate a flow.
       </p>
     </Panel>
   );
