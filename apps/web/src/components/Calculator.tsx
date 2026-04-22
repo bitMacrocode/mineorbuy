@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ASIC_PRESETS,
   HOSTING_PRESETS,
@@ -80,6 +80,15 @@ export function Calculator({ market }: { market: MarketData }) {
   const [customCagr, setCustomCagr] = useState(25);
   const [taxPresetKey, setTaxPresetKey] = useState<string>('s_corp_mid');
   const [difficultyKey, setDifficultyKey] = useState<DifficultyUIKey>('baseline');
+
+  const selectedHost = HOSTING_PRESETS[hostingKey as keyof typeof HOSTING_PRESETS];
+  const availableAsicKeys = selectedHost.available_asics ?? Object.keys(ASIC_PRESETS);
+
+  useEffect(() => {
+    if (!availableAsicKeys.includes(asicKey)) {
+      setAsicKey(availableAsicKeys[0] ?? 's21_xp');
+    }
+  }, [hostingKey, availableAsicKeys, asicKey]);
 
   const result = useMemo(() => {
     const taxPreset = TAX_PRESETS[taxPresetKey];
@@ -166,23 +175,27 @@ export function Calculator({ market }: { market: MarketData }) {
 
         <Panel title="Mining Setup">
           <div className="flex flex-col gap-4">
-            <FormField label="ASIC" hint="efficiency × price per TH">
-              <Select value={asicKey} onChange={(e) => setAsicKey(e.target.value)}>
-                {Object.entries(ASIC_PRESETS).map(([k, a]) => (
-                  <option key={k} value={k}>
-                    {a.name}  ·  {(a.watts_per_unit / a.th_per_unit).toFixed(1)} J/TH  ·  ${(a.price_per_unit / a.th_per_unit).toFixed(0)}/TH
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-
-            <FormField label="Hosting" hint="real 2026 market pricing">
+            <FormField label="Hosting" hint="determines which ASICs you can run">
               <Select value={hostingKey} onChange={(e) => setHostingKey(e.target.value)}>
                 {Object.entries(HOSTING_PRESETS).map(([k, h]) => {
                   const mgmt = h.profit_share > 0 ? `  + ${(h.profit_share * 100).toFixed(0)}% mgmt` : '';
                   return (
                     <option key={k} value={k}>
                       {h.provider}  ·  ${h.all_in_kwh_rate.toFixed(3)}/kWh{mgmt}
+                    </option>
+                  );
+                })}
+              </Select>
+            </FormField>
+
+            <FormField label="ASIC" hint="efficiency × price per TH">
+              <Select value={asicKey} onChange={(e) => setAsicKey(e.target.value)}>
+                {availableAsicKeys.map((k) => {
+                  const a = ASIC_PRESETS[k as keyof typeof ASIC_PRESETS];
+                  if (!a) return null;
+                  return (
+                    <option key={k} value={k}>
+                      {a.name}  ·  {(a.watts_per_unit / a.th_per_unit).toFixed(1)} J/TH  ·  ${(a.price_per_unit / a.th_per_unit).toFixed(0)}/TH
                     </option>
                   );
                 })}
@@ -451,6 +464,25 @@ export function Calculator({ market }: { market: MarketData }) {
                 value={result.inputs.opex_mode}
                 muted
               />
+              {selectedHost.last_verified && (
+                <SingleRow
+                  label="Pricing verified"
+                  value={selectedHost.last_verified}
+                  muted
+                />
+              )}
+              {selectedHost.url && (
+                <div className="pt-1 text-2xs">
+                  <a
+                    href={selectedHost.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-fg-muted hover:text-fg underline"
+                  >
+                    Visit {selectedHost.provider} →
+                  </a>
+                </div>
+              )}
             </div>
           </Panel>
         </div>

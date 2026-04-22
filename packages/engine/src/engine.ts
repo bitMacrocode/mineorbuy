@@ -155,6 +155,8 @@ export interface ASICSpec {
   price_per_unit: number;
   cooling: 'air' | 'hydro';
   source: string;
+  url?: string;
+  last_verified?: string;
 }
 
 export interface HostingContract {
@@ -164,6 +166,11 @@ export interface HostingContract {
   escalator: number;
   profit_share: number;
   source: string;
+  // New optional fields for v0.2:
+  url?: string;
+  last_verified?: string;  // ISO date YYYY-MM-DD
+  site_uptime?: number;  // if the site has a published ARPG/uptime that overrides default
+  available_asics?: readonly string[];  // keys into ASIC_PRESETS; undefined = all allowed
 }
 
 export interface MineInputs {
