@@ -47,7 +47,7 @@ export default async function HomePage() {
 
       <footer className="border-t border-edge pt-4 text-xs text-fg-faint">
         <p className="leading-relaxed">
-          Built by the operator of BitMacro, an independent Bitcoin mining operation.
+          Built by direct Bitcoin mining and deep physical engineering experience. Engine is open-source and auditable. Go verify it.
         </p>
         <p className="leading-relaxed">
           This tool makes a 4-year projection comparing hosted Bitcoin mining
