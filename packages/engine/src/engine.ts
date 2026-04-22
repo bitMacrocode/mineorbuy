@@ -567,23 +567,22 @@ export function simulateBuy(
   const taxPaid = biz.pretax_capital * biz.effective_rate;
   const posttax = biz.pretax_capital - taxPaid;
 
-  const dcaMonths = 12;
-  const perMonthInitial = posttax / dcaMonths;
   const monthlyOngoingPosttax =
     (annualOngoingBtcCommit * (1 - biz.effective_rate)) / 12.0;
 
-  let btcStack = 0;
-  let basis = 0;
+  // Lump buy at t=0
+  const lumpEff = posttax * (1 - buy.onramp_fee);
+  const lumpPrice = btcPriceAt(0, macro);
+  let btcStack = lumpEff / lumpPrice;
+  let basis = lumpEff;
   const monthly: MonthlyBuyRow[] = [];
 
   for (let m = 1; m <= H; m++) {
     const price = btcPriceAt(m, macro);
-    let buyThisMonth = 0;
-    if (m <= dcaMonths) buyThisMonth += perMonthInitial;
-    if (annualOngoingBtcCommit > 0) buyThisMonth += monthlyOngoingPosttax;
 
-    if (buyThisMonth > 0) {
-      const eff = buyThisMonth * (1 - buy.onramp_fee);
+    // Ongoing DCA only (the lump is already deployed)
+    if (annualOngoingBtcCommit > 0 && monthlyOngoingPosttax > 0) {
+      const eff = monthlyOngoingPosttax * (1 - buy.onramp_fee);
       btcStack += eff / price;
       basis += eff;
     }

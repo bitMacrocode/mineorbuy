@@ -89,6 +89,7 @@ export const HOSTING_PRESETS: Record<string, HostingContract> = {
     escalator: 0.0,
     profit_share: 0.0,
     source: 'simplemining.io/hosting — $0.070/kWh all-in for high-volume tier',
+    url: 'https://www.simplemining.io/hosting',
     available_asics: ['s23_hydro', 's21_xp_hydro', 's21_xp', 's21_pro'],
   },
   simple_std: {
@@ -98,6 +99,7 @@ export const HOSTING_PRESETS: Record<string, HostingContract> = {
     escalator: 0.0,
     profit_share: 0.0,
     source: 'simplemining.io/hosting — $0.080/kWh all-in standard',
+    url: 'https://www.simplemining.io/hosting',
     available_asics: ['s23_hydro', 's21_xp_hydro', 's21_xp', 's21_pro'],
   },
   // Compass — common inventory per compassmining.io/hardware (catalog rotates; common models)
@@ -108,6 +110,7 @@ export const HOSTING_PRESETS: Record<string, HostingContract> = {
     escalator: 0.0,
     profit_share: 0.0,
     source: 'compassmining.io — $0.078/kWh typical US facility',
+    url: 'https://compassmining.io',
     available_asics: ['s21_xp', 's21_pro', 's19_xp_hydro'],
   },
 

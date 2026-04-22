@@ -215,6 +215,16 @@ export function Calculator({ market }: { market: MarketData }) {
                   );
                 })}
               </Select>
+              {selectedHost.url && (
+                <a
+                  href={selectedHost.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block text-2xs text-fg-faint underline hover:text-fg"
+                >
+                  {selectedHost.provider} ↗
+                </a>
+              )}
             </FormField>
 
             <FormField label="ASIC" hint="efficiency × price per TH">
@@ -239,6 +249,19 @@ export function Calculator({ market }: { market: MarketData }) {
                   </option>
                 ))}
               </Select>
+              {(() => {
+                const onramp = ONRAMP_PRESETS[onrampKey as keyof typeof ONRAMP_PRESETS];
+                return onramp?.url ? (
+                  <a
+                    href={onramp.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-block text-2xs text-fg-faint underline hover:text-fg"
+                  >
+                    {onramp.name} ↗
+                  </a>
+                ) : null;
+              })()}
             </FormField>
           </div>
         </Panel>
