@@ -166,6 +166,7 @@ export function Calculator({ market }: { market: MarketData }) {
   };
 
   return (
+    <>
     <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
       {/* LEFT: INPUTS */}
       <div className="flex flex-col gap-4">
@@ -452,9 +453,6 @@ export function Calculator({ market }: { market: MarketData }) {
           </div>
         </Panel>
 
-        {/* Money Flow */}
-        <MoneyFlow result={result} />
-
         {/* Assumptions reference */}
         <div className="grid gap-4 sm:grid-cols-2">
           <Panel title="Active Assumptions">
@@ -555,5 +553,7 @@ export function Calculator({ market }: { market: MarketData }) {
         </div>
       </div>
     </div>
+    <MoneyFlow result={result} />
+    </>
   );
 }

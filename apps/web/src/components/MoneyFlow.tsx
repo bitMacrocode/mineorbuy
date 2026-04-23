@@ -44,7 +44,7 @@ function buyData(r: CompareResult): { inputs: FlowItem[]; outputs: FlowItem[] } 
 
   const inputs: FlowItem[] = [
     { label: 'Income tax (Yr 1)', amount: b.tax_paid_year1, color: '#f59e0b' },
-    { label: 'BTC lump DCA (Yr 1)', amount: b.posttax_capital, color: '#7dd3fc' },
+    { label: 'BTC lump buy (Yr 1)', amount: b.posttax_capital, color: '#7dd3fc' },
     ...(ongoing4yr > 0 ? [
       { label: 'Tax on ongoing (Yr 1–4)', amount: ongoingTax, color: '#f59e0b' as FlowColor },
       { label: 'Ongoing DCA (Yr 1–4)', amount: ongoing4yr - ongoingTax, color: '#7dd3fc' as FlowColor },
@@ -61,14 +61,14 @@ function buyData(r: CompareResult): { inputs: FlowItem[]; outputs: FlowItem[] } 
 
 // ─── Sankey SVG renderer (mempool.space transaction style) ──────────────────
 
-const VW = 700;
-const VH = 340;
+const VW = 800;
+const VH = 500;
 const BLOCK_W = 14;
 const LEFT_X = 160;       // right edge of left labels area
 const RIGHT_X = VW - 160; // left edge of right labels area
 const GAP = 6;
 const PAD_Y = 10;
-const MIN_BLOCK_H = 28;   // enough for two lines of text
+const MIN_BLOCK_H = 36;   // enough for two lines of text
 
 interface BlockPos { y: number; h: number }
 
@@ -190,10 +190,10 @@ function FlowDiagram({
           return (
             <g key={`in-${i}`}>
               <rect x={x1} y={p.y} width={BLOCK_W} height={p.h} rx={2} fill={item.color} fillOpacity={0.7} />
-              <text x={x1 - 6} y={p.y + p.h / 2 - 6} textAnchor="end" fontSize={9} fontFamily="monospace" className="fill-fg-muted">
+              <text x={x1 - 6} y={p.y + p.h / 2 - 6} textAnchor="end" fontSize={11} fontFamily="monospace" className="fill-fg-muted">
                 {item.label}
               </text>
-              <text x={x1 - 6} y={p.y + p.h / 2 + 7} textAnchor="end" fontSize={10} fontWeight={600} fontFamily="monospace" className="fill-fg">
+              <text x={x1 - 6} y={p.y + p.h / 2 + 7} textAnchor="end" fontSize={13} fontWeight={600} fontFamily="monospace" className="fill-fg">
                 {fmtLargeUsd(item.amount)}
               </text>
             </g>
@@ -206,10 +206,10 @@ function FlowDiagram({
           return (
             <g key={`out-${j}`}>
               <rect x={x2} y={p.y} width={BLOCK_W} height={p.h} rx={2} fill={item.color} fillOpacity={0.7} />
-              <text x={x2 + BLOCK_W + 6} y={p.y + p.h / 2 - 6} textAnchor="start" fontSize={9} fontFamily="monospace" className="fill-fg-muted">
+              <text x={x2 + BLOCK_W + 6} y={p.y + p.h / 2 - 6} textAnchor="start" fontSize={11} fontFamily="monospace" className="fill-fg-muted">
                 {item.label}
               </text>
-              <text x={x2 + BLOCK_W + 6} y={p.y + p.h / 2 + 7} textAnchor="start" fontSize={10} fontWeight={600} fontFamily="monospace" className="fill-fg">
+              <text x={x2 + BLOCK_W + 6} y={p.y + p.h / 2 + 7} textAnchor="start" fontSize={13} fontWeight={600} fontFamily="monospace" className="fill-fg">
                 {item.color === '#f59e0b' ? '−' : ''}{fmtLargeUsd(item.amount)}
               </text>
             </g>
@@ -228,7 +228,7 @@ export function MoneyFlow({ result }: { result: CompareResult }) {
 
   return (
     <Panel title="Money Flow" subtitle="Where every dollar goes across the 4-year horizon">
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className="grid gap-8 md:grid-cols-2">
         <FlowDiagram inputs={mine.inputs} outputs={mine.outputs} title="Mine + Ops" />
         <FlowDiagram inputs={buy.inputs} outputs={buy.outputs} title="Lump + DCA" />
       </div>
