@@ -5,82 +5,129 @@ import type { CompareResult } from '@mineorbuy/engine';
 import { fmtLargeUsd } from '@/lib/format';
 import { Panel } from './ui';
 
-// ─── Data types ─────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 type FlowColor = '#7dd3fc' | '#f59e0b' | '#4ade80' | '#94a3b8';
 
-interface FlowItem {
+interface FlowNode {
+  id: string;
   label: string;
-  amount: number;
+  amount: number;        // always USD for sizing/layout
+  btcAmount?: number;    // if set, show this exact BTC count in BTC mode (not USD÷price)
+  color: FlowColor;
+  col: number;           // 0=left, 1=mid, 2=right
+}
+
+interface FlowEdge {
+  from: string;
+  to: string;
+  value: number;
   color: FlowColor;
 }
 
-// ─── Derive inputs/outputs for each path ────────────────────────────────────
+// ─── Mine path: explicit causal edges ───────────────────────────────────────
 
-function mineData(r: CompareResult): { inputs: FlowItem[]; outputs: FlowItem[] } {
+function mineFlow(r: CompareResult, denom: 'usd' | 'btc'): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const m = r.mine_detail;
   const ongoing4yr = r.inputs.annual_ongoing * 4;
+  const isBtc = denom === 'btc';
 
-  const inputs: FlowItem[] = [
-    { label: 'ASIC purchase (Yr 1)', amount: m.capex_gross_user, color: '#7dd3fc' },
-    ...(ongoing4yr > 0 ? [{ label: 'Hosting opex (Yr 1–4)', amount: m.cumulative_opex_usd, color: '#7dd3fc' as FlowColor }] : []),
-    { label: 'Sec 179 tax refund', amount: m.tax_shield, color: '#4ade80' },
-  ];
-
-  const outputs: FlowItem[] = [
-    { label: 'BTC mined (terminal)', amount: m.terminal_stack_usd, color: '#7dd3fc' },
-    { label: 'Hardware resale (Yr 4)', amount: m.hardware_resale, color: '#7dd3fc' },
-    ...(m.ltcg_paid > 0 ? [{ label: 'LTCG tax', amount: m.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
-    ...(m.recapture_tax > 0 ? [{ label: '§1245 recapture', amount: m.recapture_tax, color: '#f59e0b' as FlowColor }] : []),
-  ];
-
-  return { inputs, outputs };
-}
-
-function buyData(r: CompareResult): { inputs: FlowItem[]; outputs: FlowItem[] } {
-  const b = r.buy_detail;
-  const ongoing4yr = r.inputs.annual_ongoing * 4;
-  const ongoingTax = ongoing4yr * r.inputs.effective_rate;
-
-  const inputs: FlowItem[] = [
-    { label: 'Income tax (Yr 1)', amount: b.tax_paid_year1, color: '#f59e0b' },
-    { label: 'BTC lump buy (Yr 1)', amount: b.posttax_capital, color: '#7dd3fc' },
-    ...(ongoing4yr > 0 ? [
-      { label: 'Tax on ongoing (Yr 1–4)', amount: ongoingTax, color: '#f59e0b' as FlowColor },
-      { label: 'Ongoing DCA (Yr 1–4)', amount: ongoing4yr - ongoingTax, color: '#7dd3fc' as FlowColor },
+  // BTC mode: inputs → BTC stack only. No exit taxes, no walk-away, no resale.
+  const nodes: FlowNode[] = [
+    // Col 0: inputs
+    { id: 'asic',    label: 'ASIC purchase (Yr 1)',   amount: m.capex_gross_user,      color: '#7dd3fc', col: 0 },
+    ...(ongoing4yr > 0 ? [{ id: 'host', label: 'Hosting opex (Yr 1–4)', amount: m.cumulative_opex_usd, color: '#7dd3fc' as FlowColor, col: 0 }] : []),
+    { id: 'shield',  label: 'Sec 179 tax refund',     amount: m.tax_shield,            color: '#4ade80', col: 0 },
+    // Col 1: BTC stack (terminal in BTC mode, intermediate in USD mode)
+    { id: 'btc',     label: isBtc ? 'BTC stacked' : 'BTC mined (terminal)', amount: m.terminal_stack_usd, btcAmount: m.btc_stack, color: '#7dd3fc', col: 1 },
+    // USD-only nodes
+    ...(!isBtc ? [
+      { id: 'resale',  label: 'Hardware resale (Yr 4)',  amount: m.hardware_resale,       color: '#7dd3fc' as FlowColor, col: 1 },
+      ...(m.ltcg_paid > 0 ? [{ id: 'ltcg', label: 'LTCG tax', amount: m.ltcg_paid, color: '#f59e0b' as FlowColor, col: 2 }] : []),
+      ...(m.recapture_tax > 0 ? [{ id: 'recap', label: '§1245 recapture', amount: m.recapture_tax, color: '#f59e0b' as FlowColor, col: 2 }] : []),
+      { id: 'walk',    label: 'Walk-away',               amount: m.posttax_terminal_value, color: '#94a3b8' as FlowColor, col: 2 },
     ] : []),
   ];
 
-  const outputs: FlowItem[] = [
-    { label: 'BTC stack (terminal)', amount: b.terminal_stack_usd, color: '#7dd3fc' },
-    ...(b.ltcg_paid > 0 ? [{ label: 'LTCG tax', amount: b.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
+  const edges: FlowEdge[] = [
+    // inputs → BTC stack
+    { from: 'asic',   to: 'btc',    value: m.capex_gross_user,      color: '#7dd3fc' },
+    ...(ongoing4yr > 0 ? [{ from: 'host', to: 'btc', value: m.cumulative_opex_usd, color: '#7dd3fc' as FlowColor }] : []),
+    { from: 'shield', to: 'btc',    value: m.tax_shield,            color: '#4ade80' },
+    // USD-only edges
+    ...(!isBtc ? [
+      { from: 'asic',   to: 'resale', value: m.hardware_resale,       color: '#7dd3fc' as FlowColor },
+      ...(m.ltcg_paid > 0 ? [{ from: 'btc', to: 'ltcg', value: m.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
+      { from: 'btc',    to: 'walk',   value: m.terminal_stack_usd - m.ltcg_paid, color: '#7dd3fc' as FlowColor },
+      ...(m.recapture_tax > 0 ? [{ from: 'resale', to: 'recap', value: m.recapture_tax, color: '#f59e0b' as FlowColor }] : []),
+      { from: 'resale', to: 'walk',   value: m.hardware_resale - m.recapture_tax, color: '#7dd3fc' as FlowColor },
+    ] : []),
   ];
 
-  return { inputs, outputs };
+  return { nodes: nodes.filter(n => n.amount > 0), edges: edges.filter(e => e.value > 0) };
 }
 
-// ─── Sankey SVG renderer (mempool.space transaction style) ──────────────────
+// ─── Buy path: explicit causal edges ────────────────────────────────────────
+
+function buyFlow(r: CompareResult, denom: 'usd' | 'btc'): { nodes: FlowNode[]; edges: FlowEdge[] } {
+  const b = r.buy_detail;
+  const ongoing4yr = r.inputs.annual_ongoing * 4;
+  const ongoingTax = ongoing4yr * r.inputs.effective_rate;
+  const ongoingBtc = ongoing4yr - ongoingTax;
+  const isBtc = denom === 'btc';
+
+  const nodes: FlowNode[] = [
+    // Col 0: inputs
+    { id: 'tax1',    label: 'Income tax (Yr 1)',       amount: b.tax_paid_year1,        color: '#f59e0b', col: 0 },
+    { id: 'lump',    label: 'BTC lump buy (Yr 1)',     amount: b.posttax_capital,        color: '#7dd3fc', col: 0 },
+    ...(ongoing4yr > 0 ? [
+      { id: 'tax2',  label: 'Tax on ongoing (Yr 1–4)', amount: ongoingTax,              color: '#f59e0b' as FlowColor, col: 0 },
+      { id: 'dca',   label: 'Ongoing DCA (Yr 1–4)',    amount: ongoingBtc,              color: '#7dd3fc' as FlowColor, col: 0 },
+    ] : []),
+    // Col 1: BTC stack
+    { id: 'term',    label: isBtc ? 'BTC stacked' : 'BTC stack (terminal)', amount: b.terminal_stack_usd, btcAmount: b.btc_stack, color: '#7dd3fc', col: 1 },
+    // USD-only nodes
+    ...(!isBtc ? [
+      ...(b.ltcg_paid > 0 ? [{ id: 'ltcg', label: 'LTCG tax', amount: b.ltcg_paid, color: '#f59e0b' as FlowColor, col: 2 }] : []),
+      { id: 'walk',    label: 'Walk-away',               amount: b.posttax_terminal_value, color: '#94a3b8' as FlowColor, col: 2 },
+    ] : []),
+  ];
+
+  const edges: FlowEdge[] = [
+    // inputs → BTC stack
+    { from: 'lump',  to: 'term',  value: b.posttax_capital,         color: '#7dd3fc' },
+    ...(ongoingBtc > 0 ? [{ from: 'dca', to: 'term', value: ongoingBtc, color: '#7dd3fc' as FlowColor }] : []),
+    // USD-only edges
+    ...(!isBtc ? [
+      ...(b.ltcg_paid > 0 ? [{ from: 'term', to: 'ltcg', value: b.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
+      { from: 'term',  to: 'walk',  value: b.posttax_terminal_value,  color: '#7dd3fc' as FlowColor },
+    ] : []),
+  ];
+
+  return { nodes: nodes.filter(n => n.amount > 0), edges: edges.filter(e => e.value > 0) };
+}
+
+// ─── Layout engine ──────────────────────────────────────────────────────────
 
 const VW = 800;
-const VH = 500;
+const VH = 520;
 const BLOCK_W = 14;
-const LEFT_X = 160;       // right edge of left labels area
-const RIGHT_X = VW - 160; // left edge of right labels area
 const GAP = 6;
-const PAD_Y = 10;
-const MIN_BLOCK_H = 36;   // enough for two lines of text
+const PAD_Y = 30;   // leave room for column headers
+const MIN_BLOCK_H = 36;
+const COL_X = [160, 400, 620]; // x positions for columns 0, 1, 2
+const COL_LABELS_USD = ['COMMITMENT', '4-YEAR GROWTH', 'YEAR-4 (OPTIONAL) EXIT'];
+const COL_LABELS_BTC = ['COMMITMENT', 'BTC ACCUMULATED', ''];
 
-interface BlockPos { y: number; h: number }
+interface Rect { x: number; y: number; h: number }
 
-function stackBlocks(items: FlowItem[]): BlockPos[] {
-  const total = items.reduce((s, i) => s + i.amount, 0);
-  const totalGaps = (items.length - 1) * GAP;
+function layoutColumn(nodes: FlowNode[]): Map<string, Rect> {
+  if (nodes.length === 0) return new Map();
+  const total = nodes.reduce((s, n) => s + n.amount, 0);
+  const totalGaps = (nodes.length - 1) * GAP;
   const availH = VH - 2 * PAD_Y - totalGaps;
 
-  // First pass: proportional heights clamped to minimum
-  let heights = items.map(item => Math.max(MIN_BLOCK_H, (item.amount / total) * availH));
-
-  // If clamping expanded total, scale the large items down to fit
+  let heights = nodes.map(n => Math.max(MIN_BLOCK_H, (n.amount / total) * availH));
   const sumH = heights.reduce((s, h) => s + h, 0);
   if (sumH > availH) {
     const excess = sumH - availH;
@@ -89,67 +136,87 @@ function stackBlocks(items: FlowItem[]): BlockPos[] {
     heights = heights.map(h => h > MIN_BLOCK_H ? h - excess * (h / shrinkTotal) : h);
   }
 
-  const positions: BlockPos[] = [];
+  const result = new Map<string, Rect>();
   let y = PAD_Y;
-  for (const h of heights) {
-    positions.push({ y, h });
-    y += h + GAP;
+  nodes.forEach((n, i) => {
+    result.set(n.id, { x: COL_X[n.col], y, h: heights[i] });
+    y += heights[i] + GAP;
+  });
+  return result;
+}
+
+// ─── SVG Renderer ───────────────────────────────────────────────────────────
+
+function fmtVal(amount: number, denom: 'usd' | 'btc', denomPrice: number, btcAmount?: number): string {
+  if (denom === 'btc') {
+    // Use actual BTC count if available (real holdings), else convert USD at today's price
+    const btc = btcAmount ?? (amount / denomPrice);
+    return `${btc.toFixed(btc >= 1 ? 2 : 4)} BTC`;
   }
-  return positions;
+  return fmtLargeUsd(amount);
 }
 
 function FlowDiagram({
-  inputs,
-  outputs,
+  nodes,
+  edges,
   title,
+  denom,
+  termPrice,
 }: {
-  inputs: FlowItem[];
-  outputs: FlowItem[];
+  nodes: FlowNode[];
+  edges: FlowEdge[];
   title: string;
+  denom: 'usd' | 'btc';
+  termPrice: number;
 }) {
-  const [hovIdx, setHovIdx] = useState<string | null>(null);
-  const inPos = stackBlocks(inputs);
-  const outPos = stackBlocks(outputs);
+  const [hovKey, setHovKey] = useState<string | null>(null);
 
-  const totalIn = inputs.reduce((s, i) => s + i.amount, 0);
-  const totalOut = outputs.reduce((s, i) => s + i.amount, 0);
+  // Layout each column independently
+  const col0 = nodes.filter(n => n.col === 0);
+  const col1 = nodes.filter(n => n.col === 1);
+  const col2 = nodes.filter(n => n.col === 2);
+  const layout = new Map([
+    ...layoutColumn(col0),
+    ...layoutColumn(col1),
+    ...layoutColumn(col2),
+  ]);
 
-  // Build ribbon flows: each (input, output) pair gets a proportional ribbon
-  const ribbons: Array<{
-    key: string;
-    y1: number; h1: number;
-    y2: number; h2: number;
-    color: FlowColor;
-  }> = [];
+  // Build ribbons with port tracking (cumulative offsets per node side)
+  const outPortY = new Map<string, number>(); // right edge of source
+  const inPortY = new Map<string, number>();  // left edge of target
+  nodes.forEach(n => {
+    const r = layout.get(n.id);
+    if (r) { outPortY.set(n.id, r.y); inPortY.set(n.id, r.y); }
+  });
 
-  // Track cumulative offsets within each block
-  const inOffsets = inputs.map(() => 0);
-  const outOffsets = outputs.map(() => 0);
+  const ribbons = edges.map((e, i) => {
+    const fromRect = layout.get(e.from);
+    const toRect = layout.get(e.to);
+    if (!fromRect || !toRect) return null;
 
-  for (let i = 0; i < inputs.length; i++) {
-    for (let j = 0; j < outputs.length; j++) {
-      // How much of input i flows to output j
-      const h1 = inPos[i].h * (outputs[j].amount / totalOut);
-      const h2 = outPos[j].h * (inputs[i].amount / totalIn);
+    const fromTotal = edges.filter(x => x.from === e.from).reduce((s, x) => s + x.value, 0);
+    const toTotal = edges.filter(x => x.to === e.to).reduce((s, x) => s + x.value, 0);
 
-      ribbons.push({
-        key: `${i}-${j}`,
-        y1: inPos[i].y + inOffsets[i],
-        h1,
-        y2: outPos[j].y + outOffsets[j],
-        h2,
-        color: outputs[j].color,
-      });
+    const h1 = fromTotal > 0 ? (e.value / fromTotal) * fromRect.h : 0;
+    const h2 = toTotal > 0 ? (e.value / toTotal) * toRect.h : 0;
 
-      inOffsets[i] += h1;
-      outOffsets[j] += h2;
-    }
-  }
+    const y1 = outPortY.get(e.from) ?? 0;
+    const y2 = inPortY.get(e.to) ?? 0;
 
-  const x1 = LEFT_X;
-  const x2 = RIGHT_X;
-  const cx1 = x1 + (x2 - x1) * 0.4;
-  const cx2 = x1 + (x2 - x1) * 0.6;
+    outPortY.set(e.from, y1 + h1);
+    inPortY.set(e.to, y2 + h2);
+
+    const x1 = fromRect.x + BLOCK_W;
+    const x2 = toRect.x;
+    const cx1 = x1 + (x2 - x1) * 0.4;
+    const cx2 = x1 + (x2 - x1) * 0.6;
+
+    const key = `${e.from}-${e.to}-${i}`;
+    return { key, y1, h1, y2, h2, x1, x2, cx1, cx2, color: e.color };
+  }).filter(Boolean) as Array<{
+    key: string; y1: number; h1: number; y2: number; h2: number;
+    x1: number; x2: number; cx1: number; cx2: number; color: FlowColor;
+  }>;
 
   return (
     <div>
@@ -158,19 +225,40 @@ function FlowDiagram({
         viewBox={`0 0 ${VW} ${VH}`}
         className="w-full"
         preserveAspectRatio="xMidYMid meet"
-        onMouseLeave={() => setHovIdx(null)}
+        onMouseLeave={() => setHovKey(null)}
       >
+        {/* Column headers */}
+        {COL_X.map((x, i) => {
+          const label = (denom === 'btc' ? COL_LABELS_BTC : COL_LABELS_USD)[i];
+          if (!label) return null;
+          return (
+            <text
+              key={`col-${i}`}
+              x={x + BLOCK_W / 2}
+              y={14}
+              textAnchor="middle"
+              fontSize={9}
+              fontWeight={600}
+              fontFamily="monospace"
+              letterSpacing="0.08em"
+              className="fill-fg-faint"
+            >
+              {label}
+            </text>
+          );
+        })}
+
         {/* Ribbons */}
         {ribbons.map(r => {
-          const dimmed = hovIdx !== null && hovIdx !== r.key;
+          const dimmed = hovKey !== null && hovKey !== r.key;
           return (
             <path
               key={r.key}
               d={[
-                `M${x1 + BLOCK_W},${r.y1}`,
-                `C${cx1},${r.y1} ${cx2},${r.y2} ${x2},${r.y2}`,
-                `L${x2},${r.y2 + r.h2}`,
-                `C${cx2},${r.y2 + r.h2} ${cx1},${r.y1 + r.h1} ${x1 + BLOCK_W},${r.y1 + r.h1}`,
+                `M${r.x1},${r.y1}`,
+                `C${r.cx1},${r.y1} ${r.cx2},${r.y2} ${r.x2},${r.y2}`,
+                `L${r.x2},${r.y2 + r.h2}`,
+                `C${r.cx2},${r.y2 + r.h2} ${r.cx1},${r.y1 + r.h1} ${r.x1},${r.y1 + r.h1}`,
                 'Z',
               ].join(' ')}
               fill={r.color}
@@ -179,38 +267,44 @@ function FlowDiagram({
               strokeWidth={0.5}
               strokeOpacity={dimmed ? 0.05 : 0.25}
               className="cursor-pointer transition-opacity"
-              onMouseEnter={() => setHovIdx(r.key)}
+              onMouseEnter={() => setHovKey(r.key)}
             />
           );
         })}
 
-        {/* Left blocks + labels */}
-        {inputs.map((item, i) => {
-          const p = inPos[i];
-          return (
-            <g key={`in-${i}`}>
-              <rect x={x1} y={p.y} width={BLOCK_W} height={p.h} rx={2} fill={item.color} fillOpacity={0.7} />
-              <text x={x1 - 6} y={p.y + p.h / 2 - 6} textAnchor="end" fontSize={11} fontFamily="monospace" className="fill-fg-muted">
-                {item.label}
-              </text>
-              <text x={x1 - 6} y={p.y + p.h / 2 + 7} textAnchor="end" fontSize={13} fontWeight={600} fontFamily="monospace" className="fill-fg">
-                {fmtLargeUsd(item.amount)}
-              </text>
-            </g>
-          );
-        })}
+        {/* Nodes */}
+        {nodes.map(n => {
+          const r = layout.get(n.id);
+          if (!r) return null;
+          const isLeft = n.col === 0;
+          const isRight = n.col === 2;
+          const isMid = n.col === 1;
+          const textX = isLeft ? r.x - 6 : r.x + BLOCK_W + 6;
+          const anchor = isLeft ? 'end' : 'start';
+          // Dead-end tax nodes at col 0 (Buy income tax) — label on right since no outgoing edge
+          const hasOutEdge = edges.some(e => e.from === n.id);
+          const labelX = (isLeft && !hasOutEdge) ? r.x + BLOCK_W + 6 : textX;
+          const labelAnchor = (isLeft && !hasOutEdge) ? 'start' : anchor;
 
-        {/* Right blocks + labels */}
-        {outputs.map((item, j) => {
-          const p = outPos[j];
           return (
-            <g key={`out-${j}`}>
-              <rect x={x2} y={p.y} width={BLOCK_W} height={p.h} rx={2} fill={item.color} fillOpacity={0.7} />
-              <text x={x2 + BLOCK_W + 6} y={p.y + p.h / 2 - 6} textAnchor="start" fontSize={11} fontFamily="monospace" className="fill-fg-muted">
-                {item.label}
+            <g key={n.id}>
+              <rect
+                x={r.x} y={r.y} width={BLOCK_W} height={r.h} rx={2}
+                fill={n.color} fillOpacity={0.7}
+              />
+              <text
+                x={labelX} y={r.y + r.h / 2 - 6}
+                textAnchor={labelAnchor}
+                fontSize={11} fontFamily="monospace" className="fill-fg-muted"
+              >
+                {n.label}
               </text>
-              <text x={x2 + BLOCK_W + 6} y={p.y + p.h / 2 + 7} textAnchor="start" fontSize={13} fontWeight={600} fontFamily="monospace" className="fill-fg">
-                {item.color === '#f59e0b' ? '−' : ''}{fmtLargeUsd(item.amount)}
+              <text
+                x={labelX} y={r.y + r.h / 2 + 7}
+                textAnchor={labelAnchor}
+                fontSize={13} fontWeight={600} fontFamily="monospace" className="fill-fg"
+              >
+                {n.color === '#f59e0b' ? '−' : ''}{fmtVal(n.amount, denom, termPrice, n.btcAmount)}
               </text>
             </g>
           );
@@ -222,15 +316,25 @@ function FlowDiagram({
 
 // ─── Exported component ─────────────────────────────────────────────────────
 
-export function MoneyFlow({ result }: { result: CompareResult }) {
-  const mine = mineData(result);
-  const buy = buyData(result);
+export function MoneyFlow({ result, denom, termPrice }: { result: CompareResult; denom: 'usd' | 'btc'; termPrice: number }) {
+  const mine = mineFlow(result, denom);
+  const buy = buyFlow(result, denom);
 
   return (
-    <Panel title="Money Flow" subtitle="Where every dollar goes across the 4-year horizon">
+    <Panel
+      title="Money Flow"
+      subtitle={denom === 'btc'
+        ? 'BTC accumulation across a 4-year simulation'
+        : 'Where every dollar goes across the 4-year horizon'}
+    >
+      <p className="mb-4 text-2xs text-fg-faint leading-relaxed">
+        {denom === 'btc'
+          ? 'BTC accumulation across a 4-year simulation. Exit taxes (LTCG, §1245) only apply on sale and are hidden here — most operators stack, not sell.'
+          : 'Pre-tax capital flows left to right through a 4-year simulation. Year-4 exit taxes assume sale of BTC and hardware; operators who HODL avoid LTCG and §1245 until realization.'}
+      </p>
       <div className="grid gap-8 md:grid-cols-2">
-        <FlowDiagram inputs={mine.inputs} outputs={mine.outputs} title="Mine + Ops" />
-        <FlowDiagram inputs={buy.inputs} outputs={buy.outputs} title="Lump + DCA" />
+        <FlowDiagram nodes={mine.nodes} edges={mine.edges} title="Mine + Ops" denom={denom} termPrice={termPrice} />
+        <FlowDiagram nodes={buy.nodes} edges={buy.edges} title="Lump + DCA" denom={denom} termPrice={termPrice} />
       </div>
       <p className="mt-4 text-2xs text-fg-faint leading-relaxed">
         Blue = productive capital / returns. Amber = tax outflows. Green = tax refund (Sec 179). Hover ribbons to isolate a flow.

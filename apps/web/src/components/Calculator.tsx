@@ -83,6 +83,7 @@ export function Calculator({ market }: { market: MarketData }) {
   const [customCagr, setCustomCagr] = useState(25);
   const [taxPresetKey, setTaxPresetKey] = useState<string>('s_corp_mid');
   const [difficultyKey, setDifficultyKey] = useState<DifficultyUIKey>('baseline');
+  const [denom, setDenom] = useState<'usd' | 'btc'>('usd');
 
   const selectedHost = HOSTING_PRESETS[hostingKey as keyof typeof HOSTING_PRESETS];
   const availableAsicKeys = selectedHost.available_asics ?? Object.keys(ASIC_PRESETS);
@@ -135,6 +136,33 @@ export function Calculator({ market }: { market: MarketData }) {
   const deltaBtc = m.btc_stack - b.btc_stack;
   const deltaPost = m.posttax_terminal_value - b.posttax_terminal_value;
   const mineWins = deltaBtc > 0;
+
+  // Denomination helper: display USD or convert to BTC at today's price
+  const termPrice = m.terminal_btc_price;
+  const denomPrice = market.btcPrice;
+  const fmt$ = (usd: number) => {
+    if (denom === 'btc') {
+      const btc = usd / denomPrice;
+      return `${btc.toFixed(btc >= 1 ? 2 : 4)} BTC`;
+    }
+    return fmtUsd(usd);
+  };
+  const fmt$signed = (usd: number) => {
+    const sign = usd >= 0 ? '+' : '−';
+    const abs = Math.abs(usd);
+    if (denom === 'btc') {
+      const btc = abs / denomPrice;
+      return `${sign}${btc.toFixed(btc >= 1 ? 2 : 4)} BTC`;
+    }
+    return `${sign}${fmtUsd(abs)}`;
+  };
+  const fmt$neg = (usd: number) => {
+    if (denom === 'btc') {
+      const btc = usd / denomPrice;
+      return `−${btc.toFixed(btc >= 1 ? 2 : 4)} BTC`;
+    }
+    return `−${fmtUsd(usd)}`;
+  };
 
   const retargetPct = market.difficultyNextAdjustmentPct;
   const suggestedPreset: DifficultyUIKey =
@@ -360,6 +388,14 @@ export function Calculator({ market }: { market: MarketData }) {
                 <Badge tone={mineWins ? 'mine' : 'buy'}>
                   {mineWins ? 'Mine wins sats' : 'Buy wins sats'}
                 </Badge>
+                <SegmentedControl
+                  value={denom}
+                  onChange={(v) => setDenom(v as 'usd' | 'btc')}
+                  options={[
+                    { value: 'usd', label: 'USD' },
+                    { value: 'btc', label: 'BTC' },
+                  ]}
+                />
               </div>
               <div className="mt-3 flex items-baseline gap-3">
                 <span
@@ -370,12 +406,16 @@ export function Calculator({ market }: { market: MarketData }) {
                   {fmtSigned(deltaBtc, 3)}
                 </span>
                 <span className="text-sm text-fg-muted">BTC</span>
-                <span className="text-base tabular text-fg-muted">
-                  {fmtUsdSigned(deltaPost)} post-tax
-                </span>
+                {denom === 'usd' && (
+                  <span className="text-base tabular text-fg-muted">
+                    {fmt$signed(deltaPost)} post-tax
+                  </span>
+                )}
               </div>
               <p className="mt-2 text-sm leading-relaxed text-fg-muted">
-                Over 4 years, on identical pre-tax dollars committed to each path.
+                {denom === 'btc'
+                  ? `${fmtSigned(Math.abs(deltaBtc), 3)} BTC ${mineWins ? 'more' : 'fewer'} stacked over Buy path`
+                  : 'Over 4 years, on identical pre-tax dollars committed to each path.'}
               </p>
             </div>
           </div>
@@ -393,42 +433,44 @@ export function Calculator({ market }: { market: MarketData }) {
             <div className="py-2">
               <StatRow
                 label="Units / initial outlay"
-                mine={`${m.total_units.toFixed(1)}  ·  ${fmtUsd(m.capex_gross_user)}`}
-                buy={fmtUsd(b.posttax_capital)}
+                mine={`${m.total_units.toFixed(1)}  ·  ${fmt$(m.capex_gross_user)}`}
+                buy={fmt$(b.posttax_capital)}
               />
               <StatRow
                 label="Tax shield refund (Sec 179)"
-                mine={fmtUsd(m.tax_shield)}
+                mine={fmt$(m.tax_shield)}
                 buy="—"
               />
               <StatRow
                 label="Total committed (4 yr)"
-                mine={fmtUsd(result.inputs.total_pretax_committed)}
-                buy={fmtUsd(result.inputs.total_pretax_committed)}
+                mine={fmt$(result.inputs.total_pretax_committed)}
+                buy={fmt$(result.inputs.total_pretax_committed)}
               />
               <StatRow
                 label="Ongoing hosting / DCA per year"
-                mine={fmtUsd(result.inputs.annual_ongoing)}
-                buy={fmtUsd(result.inputs.annual_ongoing)}
+                mine={fmt$(result.inputs.annual_ongoing)}
+                buy={fmt$(result.inputs.annual_ongoing)}
               />
             </div>
 
             <div className="py-2">
               <StatRow label="BTC stack" mine={fmtBtc(m.btc_stack)} buy={fmtBtc(b.btc_stack)} emphasis />
+              {denom === 'usd' && (
+                <StatRow
+                  label="Cost per coin"
+                  mine={m.btc_stack > 0 ? fmtUsd(m.cost_basis / m.btc_stack) : '—'}
+                  buy={b.btc_stack > 0 ? fmtUsd(b.cost_basis / b.btc_stack) : '—'}
+                />
+              )}
               <StatRow
-                label="Cost per coin"
-                mine={m.btc_stack > 0 ? fmtUsd(m.cost_basis / m.btc_stack) : '—'}
-                buy={b.btc_stack > 0 ? fmtUsd(b.cost_basis / b.btc_stack) : '—'}
+                label={denom === 'btc' ? 'Terminal (pre-tax)' : 'Terminal USD (pre-tax)'}
+                mine={denom === 'btc' ? fmtBtc(m.btc_stack) : fmtUsd(m.pretax_terminal_value)}
+                buy={denom === 'btc' ? fmtBtc(b.btc_stack) : fmtUsd(b.pretax_terminal_value)}
               />
               <StatRow
-                label="Terminal USD (pre-tax)"
-                mine={fmtUsd(m.pretax_terminal_value)}
-                buy={fmtUsd(b.pretax_terminal_value)}
-              />
-              <StatRow
-                label="Terminal USD (post-liquidation)"
-                mine={fmtUsd(m.posttax_terminal_value)}
-                buy={fmtUsd(b.posttax_terminal_value)}
+                label={denom === 'btc' ? 'Terminal (post-liquidation)' : 'Terminal USD (post-liquidation)'}
+                mine={denom === 'btc' ? fmtBtc(m.btc_stack - m.ltcg_paid / termPrice) : fmtUsd(m.posttax_terminal_value)}
+                buy={denom === 'btc' ? fmtBtc(b.btc_stack - b.ltcg_paid / termPrice) : fmtUsd(b.posttax_terminal_value)}
                 emphasis
               />
             </div>
@@ -436,18 +478,18 @@ export function Calculator({ market }: { market: MarketData }) {
             <div className="py-2">
               <StatRow
                 label="Hardware resale (yr 4)"
-                mine={fmtUsd(m.hardware_resale)}
+                mine={fmt$(m.hardware_resale)}
                 buy="—"
               />
               <StatRow
                 label="§1245 recapture tax"
-                mine={`−${fmtUsd(m.recapture_tax)}`}
+                mine={fmt$neg(m.recapture_tax)}
                 buy="—"
               />
               <StatRow
                 label="LTCG on BTC gain"
-                mine={m.ltcg_paid > 0 ? `−${fmtUsd(m.ltcg_paid)}` : '—'}
-                buy={b.ltcg_paid > 0 ? `−${fmtUsd(b.ltcg_paid)}` : '—'}
+                mine={m.ltcg_paid > 0 ? fmt$neg(m.ltcg_paid) : '—'}
+                buy={b.ltcg_paid > 0 ? fmt$neg(b.ltcg_paid) : '—'}
               />
             </div>
           </div>
@@ -512,7 +554,7 @@ export function Calculator({ market }: { market: MarketData }) {
               />
               <SingleRow
                 label="Mine hosting (4yr total)"
-                value={fmtUsd(m.cumulative_opex_usd)}
+                value={fmt$(m.cumulative_opex_usd)}
               />
               <SingleRow
                 label="Hosting rate"
@@ -553,7 +595,7 @@ export function Calculator({ market }: { market: MarketData }) {
         </div>
       </div>
     </div>
-    <MoneyFlow result={result} />
+    <MoneyFlow result={result} denom={denom} termPrice={denomPrice} />
     </>
   );
 }
