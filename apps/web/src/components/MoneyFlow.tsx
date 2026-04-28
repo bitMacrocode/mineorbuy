@@ -12,10 +12,9 @@ type FlowColor = '#7dd3fc' | '#f59e0b' | '#4ade80' | '#94a3b8';
 interface FlowNode {
   id: string;
   label: string;
-  amount: number;        // always USD for sizing/layout
-  btcAmount?: number;    // if set, show this exact BTC count in BTC mode (not USD÷price)
+  amount: number;
   color: FlowColor;
-  col: number;           // 0=left, 1=mid, 2=right
+  col: number;       // 0=left, 1=mid, 2=right
 }
 
 interface FlowEdge {
@@ -27,41 +26,30 @@ interface FlowEdge {
 
 // ─── Mine path: explicit causal edges ───────────────────────────────────────
 
-function mineFlow(r: CompareResult, denom: 'usd' | 'btc'): { nodes: FlowNode[]; edges: FlowEdge[] } {
+function mineFlow(r: CompareResult): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const m = r.mine_detail;
   const ongoing4yr = r.inputs.annual_ongoing * 4;
-  const isBtc = denom === 'btc';
 
-  // BTC mode: inputs → BTC stack only. No exit taxes, no walk-away, no resale.
   const nodes: FlowNode[] = [
-    // Col 0: inputs
     { id: 'asic',    label: 'ASIC purchase (Yr 1)',   amount: m.capex_gross_user,      color: '#7dd3fc', col: 0 },
     ...(ongoing4yr > 0 ? [{ id: 'host', label: 'Hosting opex (Yr 1–4)', amount: m.cumulative_opex_usd, color: '#7dd3fc' as FlowColor, col: 0 }] : []),
     { id: 'shield',  label: 'Sec 179 tax refund',     amount: m.tax_shield,            color: '#4ade80', col: 0 },
-    // Col 1: BTC stack (terminal in BTC mode, intermediate in USD mode)
-    { id: 'btc',     label: isBtc ? 'BTC stacked' : 'BTC mined (terminal)', amount: m.terminal_stack_usd, btcAmount: m.btc_stack, color: '#7dd3fc', col: 1 },
-    // USD-only nodes
-    ...(!isBtc ? [
-      { id: 'resale',  label: 'Hardware resale (Yr 4)',  amount: m.hardware_resale,       color: '#7dd3fc' as FlowColor, col: 1 },
-      ...(m.ltcg_paid > 0 ? [{ id: 'ltcg', label: 'LTCG tax', amount: m.ltcg_paid, color: '#f59e0b' as FlowColor, col: 2 }] : []),
-      ...(m.recapture_tax > 0 ? [{ id: 'recap', label: '§1245 recapture', amount: m.recapture_tax, color: '#f59e0b' as FlowColor, col: 2 }] : []),
-      { id: 'walk',    label: 'Walk-away',               amount: m.posttax_terminal_value, color: '#94a3b8' as FlowColor, col: 2 },
-    ] : []),
+    { id: 'btc',     label: 'BTC mined (terminal)',    amount: m.terminal_stack_usd,    color: '#7dd3fc', col: 1 },
+    { id: 'resale',  label: 'Hardware resale (Yr 4)',  amount: m.hardware_resale,       color: '#7dd3fc', col: 1 },
+    ...(m.ltcg_paid > 0 ? [{ id: 'ltcg', label: 'LTCG tax', amount: m.ltcg_paid, color: '#f59e0b' as FlowColor, col: 2 }] : []),
+    ...(m.recapture_tax > 0 ? [{ id: 'recap', label: '§1245 recapture', amount: m.recapture_tax, color: '#f59e0b' as FlowColor, col: 2 }] : []),
+    { id: 'walk',    label: 'Walk-away',               amount: m.posttax_terminal_value, color: '#94a3b8', col: 2 },
   ];
 
   const edges: FlowEdge[] = [
-    // inputs → BTC stack
     { from: 'asic',   to: 'btc',    value: m.capex_gross_user,      color: '#7dd3fc' },
+    { from: 'asic',   to: 'resale', value: m.hardware_resale,       color: '#7dd3fc' },
     ...(ongoing4yr > 0 ? [{ from: 'host', to: 'btc', value: m.cumulative_opex_usd, color: '#7dd3fc' as FlowColor }] : []),
     { from: 'shield', to: 'btc',    value: m.tax_shield,            color: '#4ade80' },
-    // USD-only edges
-    ...(!isBtc ? [
-      { from: 'asic',   to: 'resale', value: m.hardware_resale,       color: '#7dd3fc' as FlowColor },
-      ...(m.ltcg_paid > 0 ? [{ from: 'btc', to: 'ltcg', value: m.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
-      { from: 'btc',    to: 'walk',   value: m.terminal_stack_usd - m.ltcg_paid, color: '#7dd3fc' as FlowColor },
-      ...(m.recapture_tax > 0 ? [{ from: 'resale', to: 'recap', value: m.recapture_tax, color: '#f59e0b' as FlowColor }] : []),
-      { from: 'resale', to: 'walk',   value: m.hardware_resale - m.recapture_tax, color: '#7dd3fc' as FlowColor },
-    ] : []),
+    ...(m.ltcg_paid > 0 ? [{ from: 'btc', to: 'ltcg', value: m.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
+    { from: 'btc',    to: 'walk',   value: m.terminal_stack_usd - m.ltcg_paid, color: '#7dd3fc' },
+    ...(m.recapture_tax > 0 ? [{ from: 'resale', to: 'recap', value: m.recapture_tax, color: '#f59e0b' as FlowColor }] : []),
+    { from: 'resale', to: 'walk',   value: m.hardware_resale - m.recapture_tax, color: '#7dd3fc' },
   ];
 
   return { nodes: nodes.filter(n => n.amount > 0), edges: edges.filter(e => e.value > 0) };
@@ -69,39 +57,29 @@ function mineFlow(r: CompareResult, denom: 'usd' | 'btc'): { nodes: FlowNode[]; 
 
 // ─── Buy path: explicit causal edges ────────────────────────────────────────
 
-function buyFlow(r: CompareResult, denom: 'usd' | 'btc'): { nodes: FlowNode[]; edges: FlowEdge[] } {
+function buyFlow(r: CompareResult): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const b = r.buy_detail;
   const ongoing4yr = r.inputs.annual_ongoing * 4;
   const ongoingTax = ongoing4yr * r.inputs.effective_rate;
   const ongoingBtc = ongoing4yr - ongoingTax;
-  const isBtc = denom === 'btc';
 
   const nodes: FlowNode[] = [
-    // Col 0: inputs
     { id: 'tax1',    label: 'Income tax (Yr 1)',       amount: b.tax_paid_year1,        color: '#f59e0b', col: 0 },
     { id: 'lump',    label: 'BTC lump buy (Yr 1)',     amount: b.posttax_capital,        color: '#7dd3fc', col: 0 },
     ...(ongoing4yr > 0 ? [
       { id: 'tax2',  label: 'Tax on ongoing (Yr 1–4)', amount: ongoingTax,              color: '#f59e0b' as FlowColor, col: 0 },
       { id: 'dca',   label: 'Ongoing DCA (Yr 1–4)',    amount: ongoingBtc,              color: '#7dd3fc' as FlowColor, col: 0 },
     ] : []),
-    // Col 1: BTC stack
-    { id: 'term',    label: isBtc ? 'BTC stacked' : 'BTC stack (terminal)', amount: b.terminal_stack_usd, btcAmount: b.btc_stack, color: '#7dd3fc', col: 1 },
-    // USD-only nodes
-    ...(!isBtc ? [
-      ...(b.ltcg_paid > 0 ? [{ id: 'ltcg', label: 'LTCG tax', amount: b.ltcg_paid, color: '#f59e0b' as FlowColor, col: 2 }] : []),
-      { id: 'walk',    label: 'Walk-away',               amount: b.posttax_terminal_value, color: '#94a3b8' as FlowColor, col: 2 },
-    ] : []),
+    { id: 'term',    label: 'BTC stack (terminal)',     amount: b.terminal_stack_usd,    color: '#7dd3fc', col: 1 },
+    ...(b.ltcg_paid > 0 ? [{ id: 'ltcg', label: 'LTCG tax', amount: b.ltcg_paid, color: '#f59e0b' as FlowColor, col: 2 }] : []),
+    { id: 'walk',    label: 'Walk-away',               amount: b.posttax_terminal_value, color: '#94a3b8', col: 2 },
   ];
 
   const edges: FlowEdge[] = [
-    // inputs → BTC stack
     { from: 'lump',  to: 'term',  value: b.posttax_capital,         color: '#7dd3fc' },
     ...(ongoingBtc > 0 ? [{ from: 'dca', to: 'term', value: ongoingBtc, color: '#7dd3fc' as FlowColor }] : []),
-    // USD-only edges
-    ...(!isBtc ? [
-      ...(b.ltcg_paid > 0 ? [{ from: 'term', to: 'ltcg', value: b.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
-      { from: 'term',  to: 'walk',  value: b.posttax_terminal_value,  color: '#7dd3fc' as FlowColor },
-    ] : []),
+    ...(b.ltcg_paid > 0 ? [{ from: 'term', to: 'ltcg', value: b.ltcg_paid, color: '#f59e0b' as FlowColor }] : []),
+    { from: 'term',  to: 'walk',  value: b.posttax_terminal_value,  color: '#7dd3fc' },
   ];
 
   return { nodes: nodes.filter(n => n.amount > 0), edges: edges.filter(e => e.value > 0) };
@@ -116,8 +94,7 @@ const GAP = 6;
 const PAD_Y = 30;   // leave room for column headers
 const MIN_BLOCK_H = 36;
 const COL_X = [160, 400, 620]; // x positions for columns 0, 1, 2
-const COL_LABELS_USD = ['COMMITMENT', '4-YEAR GROWTH', 'YEAR-4 (OPTIONAL) EXIT'];
-const COL_LABELS_BTC = ['COMMITMENT', 'BTC ACCUMULATED', ''];
+const COL_LABELS = ['COMMITMENT', '4-YEAR GROWTH', 'YEAR-4 (OPTIONAL) EXIT'];
 
 interface Rect { x: number; y: number; h: number }
 
@@ -147,12 +124,7 @@ function layoutColumn(nodes: FlowNode[]): Map<string, Rect> {
 
 // ─── SVG Renderer ───────────────────────────────────────────────────────────
 
-function fmtVal(amount: number, denom: 'usd' | 'btc', denomPrice: number, btcAmount?: number): string {
-  if (denom === 'btc') {
-    // Use actual BTC count if available (real holdings), else convert USD at today's price
-    const btc = btcAmount ?? (amount / denomPrice);
-    return `${btc.toFixed(btc >= 1 ? 2 : 4)} BTC`;
-  }
+function fmtVal(amount: number): string {
   return fmtLargeUsd(amount);
 }
 
@@ -160,14 +132,10 @@ function FlowDiagram({
   nodes,
   edges,
   title,
-  denom,
-  termPrice,
 }: {
   nodes: FlowNode[];
   edges: FlowEdge[];
   title: string;
-  denom: 'usd' | 'btc';
-  termPrice: number;
 }) {
   const [hovKey, setHovKey] = useState<string | null>(null);
 
@@ -228,25 +196,21 @@ function FlowDiagram({
         onMouseLeave={() => setHovKey(null)}
       >
         {/* Column headers */}
-        {COL_X.map((x, i) => {
-          const label = (denom === 'btc' ? COL_LABELS_BTC : COL_LABELS_USD)[i];
-          if (!label) return null;
-          return (
-            <text
-              key={`col-${i}`}
-              x={x + BLOCK_W / 2}
-              y={14}
-              textAnchor="middle"
-              fontSize={9}
-              fontWeight={600}
-              fontFamily="monospace"
-              letterSpacing="0.08em"
-              className="fill-fg-faint"
-            >
-              {label}
-            </text>
-          );
-        })}
+        {COL_X.map((x, i) => (
+          <text
+            key={`col-${i}`}
+            x={x + BLOCK_W / 2}
+            y={14}
+            textAnchor="middle"
+            fontSize={9}
+            fontWeight={600}
+            fontFamily="monospace"
+            letterSpacing="0.08em"
+            className="fill-fg-faint"
+          >
+            {COL_LABELS[i]}
+          </text>
+        ))}
 
         {/* Ribbons */}
         {ribbons.map(r => {
@@ -304,7 +268,7 @@ function FlowDiagram({
                 textAnchor={labelAnchor}
                 fontSize={13} fontWeight={600} fontFamily="monospace" className="fill-fg"
               >
-                {n.color === '#f59e0b' ? '−' : ''}{fmtVal(n.amount, denom, termPrice, n.btcAmount)}
+                {n.color === '#f59e0b' ? '−' : ''}{fmtVal(n.amount)}
               </text>
             </g>
           );
@@ -316,25 +280,18 @@ function FlowDiagram({
 
 // ─── Exported component ─────────────────────────────────────────────────────
 
-export function MoneyFlow({ result, denom, termPrice }: { result: CompareResult; denom: 'usd' | 'btc'; termPrice: number }) {
-  const mine = mineFlow(result, denom);
-  const buy = buyFlow(result, denom);
+export function MoneyFlow({ result }: { result: CompareResult }) {
+  const mine = mineFlow(result);
+  const buy = buyFlow(result);
 
   return (
-    <Panel
-      title="Money Flow"
-      subtitle={denom === 'btc'
-        ? 'BTC accumulation across a 4-year simulation'
-        : 'Where every dollar goes across the 4-year horizon'}
-    >
+    <Panel title="Money Flow" subtitle="Where every dollar goes across the 4-year horizon">
       <p className="mb-4 text-2xs text-fg-faint leading-relaxed">
-        {denom === 'btc'
-          ? 'BTC accumulation across a 4-year simulation. Exit taxes (LTCG, §1245) only apply on sale and are hidden here — most operators stack, not sell.'
-          : 'Pre-tax capital flows left to right through a 4-year simulation. Year-4 exit taxes assume sale of BTC and hardware; operators who HODL avoid LTCG and §1245 until realization.'}
+        Pre-tax capital flows left to right through a 4-year simulation. Year-4 exit taxes assume sale of BTC and hardware; operators who HODL avoid LTCG and §1245 until realization.
       </p>
       <div className="grid gap-8 md:grid-cols-2">
-        <FlowDiagram nodes={mine.nodes} edges={mine.edges} title="Mine + Ops" denom={denom} termPrice={termPrice} />
-        <FlowDiagram nodes={buy.nodes} edges={buy.edges} title="Lump + DCA" denom={denom} termPrice={termPrice} />
+        <FlowDiagram nodes={mine.nodes} edges={mine.edges} title="Mine + Ops" />
+        <FlowDiagram nodes={buy.nodes} edges={buy.edges} title="Lump + DCA" />
       </div>
       <p className="mt-4 text-2xs text-fg-faint leading-relaxed">
         Blue = productive capital / returns. Amber = tax outflows. Green = tax refund (Sec 179). Hover ribbons to isolate a flow.
